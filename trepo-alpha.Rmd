@@ -1,0 +1,2177 @@
+---
+title: "6 Alpha Diversity Estimates"
+descriptiokabn: |
+  Reproducible workflow for ... In this workflow, ....
+author:
+#  - name: Jarrod J Scott
+#    url: https://example.com/norajones
+#    affiliation: Spacely Sprockets
+#    affiliation_nrl: https://example.com/spacelysprokets
+bibliography: assets/cite.bib
+output:
+    distill::distill_article:
+      css: assets/styles.css
+      toc: true
+      toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+set.seed(119)
+#library(conflicted)
+library(phyloseq); packageVersion("phyloseq")
+library(DT)
+library(Biostrings); packageVersion("Biostrings")
+#library(microbiome)
+library(tidyverse)
+library(data.table)
+library(plyr)
+require(gdata)
+library(labdsv)
+library(reshape)
+library(naniar)
+library(tibble)
+library(vegan)
+library(agricolae)
+library(patchwork)
+library(ampvis2)
+library(codefolder)
+library(pairwiseAdonis)
+library(microbiome)
+library(cowplot)
+library(DESeq2)
+library(ape)
+library(hilldiv)
+library(phytools)
+library(phangorn)
+library(ggpubr)
+library(patchwork)
+library(forcats)
+source("hack_code/div_test_plot_jjs.R")
+
+options(scipen=999)
+knitr::opts_current$get(c(
+  "cache",
+  "cache.path",
+  "cache.rebuild",
+  "dependson",
+  "autodep"
+))
+```
+
+> Hit the *Hide Code* button to hide the R code.
+
+<aside>
+```{r codefolder_ssu, echo=FALSE, results='asis', eval=TRUE}
+codefolder::generic(init = "show", query = "pre.sourceCode",
+  style = "position: absolute; right: 14%; z-index: 200")
+```
+</aside>
+
+# Synopsis
+
+This workflow contains diversity assessments for the **full** data set---all replicate samples---and the **merged** data set---replicates combined by sample. In order to run the workflow, you either need to first run the  [DADA2 Workflow](trepo-dada2.html) **and** the [Data Preparation workflow](trepo-data-prep.html) **or** begin with the output files from the Data Preparation workflow. See the [Data Availability](data-availability.html) page for complete details.
+
+In this workflow...
+
+# Full Data Set (ASV)
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #2
+remove(list = ls())
+load("page_build/trepo/alpha_ssu_alpha_full_wf_part1.rdata")
+#objects()
+```
+
+```{r, include=FALSE}
+## Initial Load for  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+## FULL DATASET
+## ASV FULL AND PIME
+ssu_ps_work <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work.rds")
+ssu_ps_pime <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime.rds")
+## OTU FULL AND PIME
+ssu_ps_work_otu <- readRDS("files/trepo/otu/rdata/ssu_ps_work_otu.rds")
+ssu_ps_pime_otu <- readRDS("files/trepo/pime/rdata/ssu_ps_otu_pime.rds")
+## DATA for Hist & RARE
+ssu_amp_data <- readRDS("files/trepo/data-prep/rdata/ssu_amp_data.rds")
+ssu_ps_samp_data <- sample_data(ssu_ps_work)
+
+ssu_ps_samp_data$total_reads <- readcount(ssu_ps_work)
+ssu_pime_samp_data <- sample_data(ssu_ps_pime)
+ssu_pime_samp_data$total_reads <- readcount(ssu_ps_pime)
+objects()
+```
+
+
+```{r, echo=FALSE}
+swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
+```
+
+## Read Distribution
+
+### Histogram of Read Counts
+
+```{r, warning=FALSE}
+ssu_max <- max(ssu_ps_samp_data$total_reads) +
+  (0.2 * max(ssu_ps_samp_data$total_reads))
+ssu_p_hist <- ggplot(ssu_ps_samp_data,
+       aes(ssu_ps_samp_data$total_reads)) +
+         geom_histogram(breaks = seq(0, ssu_max, by = 5000),
+                        col = "black", fill = "grey") +
+         labs(title = "Distribution of total reads (FULL)",
+              caption = "Bin width equals 5000 reads") +
+  labs(x = "No. of reads", y = "No. of samples") +
+  theme_classic()
+```
+
+```{r, fig.height=3, echo=FALSE, layout='l-body', eval=TRUE}
+ssu_p_hist
+```
+
+### Rarefaction Curves
+
+```{r}
+tmp_select <- ssu_amp_data
+tmp_select$metadata$SITE <- factor(tmp_select$metadata$SITE, 
+                                   levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+ssu_rare_curve1 <- amp_rarecurve(
+  tmp_select,
+  stepsize = 1000,
+  color_by = "SITE"
+) + scale_colour_manual(values = swel_col) 
+```
+
+
+```{r fig.height=3, layout='l-body-outset', eval=TRUE}
+ssu_rare_curve1  
+```
+
+
+For a quick comparison, we can facet the above data by Site.
+
+```{r}
+ssu_rare_curve2 <- amp_rarecurve(
+  tmp_select,
+  stepsize = 1000,
+  color_by = "SITE",
+  facet_by = "SITE",
+  facet_scales = "free"
+)  + scale_colour_manual(values = swel_col)
+```
+
+```{r fig.height=6, layout='l-body-outset', eval=TRUE}
+ssu_rare_curve2
+```
+
+
+In the **full** data set, there was a minimum read count of `r min(ssu_ps_samp_data$total_reads)`, a median of `r median(ssu_ps_samp_data$total_reads)` reads, and a maximum of `r max(ssu_ps_samp_data$total_reads)` reads. After PIME filtering, there was a minimum read count of `r min(ssu_pime_samp_data$total_reads)`, a median of `r median(ssu_pime_samp_data$total_reads)` reads, and a maximum of `r max(ssu_pime_samp_data$total_reads)` reads.
+
+## Alpha Diversity
+
+To account for presence of rare sequence variants caused by sequencing errors or other technical artifacts, we use Hill numbers [@alberdi2019guide]. Hill numbers allow the weight put on rare versus abundant sequence variants to be scaled while providing intuitive comparisons of diversity levels using “effective number of ASVs” as a measuring unit. This approach allows for balancing the over representation of rare ASVs that might be inflated due to sequencing errors.
+
+We will then use Shapiro-Wilk tests to test for normalcy and then, depending on the results, either use  parametric ANOVA or non-parametric Kruskal-Wallis to compare alpha diversity among treatments.
+
+### Calculate Hill Numbers
+
+To calculate Hill numbers, we use the R package `hilldiv` [@alberdi2019hilldiv]. We calculate three metrics that put more or less weight on common species:
+
+1) Observed richness, where `q-value = 0`.
+2) Shannon exponential, which weighs ASVs by their frequency,  where `q-value = 1`.
+3) Simpson multiplicative inverse, which over weighs abundant ASVs,  where `q-value = 2`.
+
+We perform each analysis against the full data set and the PIME filtered data set using the function `hill_div`.
+
+The command is as follows:
+
+`hill_div(count = x, qvalue = i, tree = ultrametric_tree)`, where `x` is the sample by ASV table, `i` is the q-value corresponding to the metric of interest and `tree` is an ultrametric formatted phylogenetic tree (see below).
+
+We first transform all the data to relative abundance values, and compute new trees.
+
+```{r}
+ssu_alpha_ds <- c("ssu_ps_work", "ssu_ps_pime")
+objects()
+```
+
+```{r}
+for (i in ssu_alpha_ds) {
+  tmp_ps <- transform_sample_counts(get(i), function(otu) otu/sum(otu))
+  tmp_ps@phy_tree <- NULL
+  tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE,
+                      tip.label = taxa_names(tmp_ps))
+  tmp_ps_norm <- merge_phyloseq(tmp_ps, sample_data, tmp_tree)
+  tmp_asv <- data.frame(t(otu_table(tmp_ps_norm)))
+  tmp_ps_name <- purrr::map_chr(i, ~ paste0(., "_norm"))
+  assign(tmp_ps_name, tmp_ps_norm)
+  tmp_asv_name <- purrr::map_chr(i, ~ paste0(., "_tu"))
+  assign(tmp_asv_name, tmp_asv)
+  rm(list = ls(pattern = "tmp_"))
+}
+```
+
+#### No phylogenetic tree
+
+Next, we run the analysis for all three metrics on the data sets without a tree.
+
+```{r, results='hide'}
+qvalue <- c(0,1,2)
+for (i in qvalue) {
+  for (j in ssu_alpha_ds) {
+     tmp_asv <- get(purrr::map_chr(j, ~ paste0(., "_tu")))
+     tmp_df <- data.frame(hill_div(tmp_asv, qvalue = i))
+     tmp_df <- tmp_df %>% dplyr::rename("tmp_name" = 1) %>%
+                              tibble::rownames_to_column("SamName")
+     tmp_name <- purrr::map_chr(j, ~ paste0(., "_h", i))
+     print(tmp_name)
+     assign(tmp_name, tmp_df)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+objects(pattern = "_h")
+```
+
+And make summary tables to add back into each `ps` object.
+
+```{r}
+for (i in ssu_alpha_ds) {
+     tmp_obs <- get(purrr::map_chr(i, ~ paste0(., "_h0")))
+     tmp_sha <- get(purrr::map_chr(i, ~ paste0(., "_h1")))
+     tmp_sim <- get(purrr::map_chr(i, ~ paste0(., "_h2")))
+     tmp_hill <- dplyr::left_join(tmp_obs, tmp_sha, by = "SamName") %>%
+       dplyr::left_join(., tmp_sim, by = "SamName") %>%
+       dplyr::rename("Observed" = 2, "Shannon_exp" = 3, "InvSimpson" = 4)
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_hill"))
+     assign(tmp_name, tmp_hill)
+     rm(list = ls(pattern = "tmp_"))
+}
+objects(pattern = "_hill")
+```
+
+And then create the new objects with the diversity data.
+
+```{r, echo=FALSE}
+for (i in ssu_alpha_ds) {
+     tmp_ps <- get(i)
+     tmp_hill <- get(purrr::map_chr(i, ~ paste0(., "_hill")))
+     tmp_hill_samp <- dplyr::left_join(data.frame(sample_data(tmp_ps)),
+                                         tmp_hill, by = "SamName")
+     tmp_hill_samp$ID <- tmp_hill_samp$SamName
+     tmp_hill_samp <- tmp_hill_samp %>%  tibble::column_to_rownames("ID")
+     tmp_ps2 <- merge_phyloseq(otu_table(tmp_ps),
+                                sample_data(tmp_hill_samp),
+                                tax_table(tmp_ps),
+                                phy_tree(tmp_ps))
+     assign(i, tmp_ps2)
+     tmp_path <- file.path("files/trepo/alpha/rdata/")
+     saveRDS(tmp_ps2, paste(tmp_path, i, ".rds", sep = ""))
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+#### With a phylogenetic tree
+
+We can also run the tests using the phylogenetic tree to assess **lineage** diversity rather that ASV diversity for the PIME data set. For this part we will only use PIME filtered data sets. We do a quick check	to ensure	the	ASV	names	in	the	ASV	table	and	the	tip	names	in	the	new phylogenetic tree	are	identical.
+
+```{r, echo=FALSE}
+###!!!!!!!!!!!!!!!!!!!!!!!!#####
+### LOAD THESE AFTER INITIAL ANALYSIS
+ssu_ps_pime_tree_ult <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime_tree_ult.rds")
+load("files/trepo/alpha/rdata/ssu_ps_pime_hill_tree_tests.rdata")
+```
+
+```{r, echo=FALSE}
+ssu_alpha_ds_tree <- c("ssu_ps_pime")
+for (i in ssu_alpha_ds_tree) {
+     tmp_ps <- get(i)
+     tmp_tree <- tmp_ps@phy_tree
+     tmp_tree_ult <- force.ultrametric(tmp_tree, method=c("extend"))
+     tmp_tree_name <- purrr::map_chr(i, ~ paste0(., "_tree_ult"))
+     assign(tmp_tree_name, tmp_tree_ult)
+     tmp_path <- file.path("files/trepo/alpha/rdata/")
+     saveRDS(tmp_tree_ult, paste(tmp_path, tmp_tree_name, ".rds", sep = ""))
+     tmp_tmp_asv <- get(purrr::map_chr(i, ~ paste0(., "_tu")))
+     print(identical(sort(rownames(tmp_tmp_asv)), sort(tmp_tree_ult$tip.label)))
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, results='hide'}
+ssu_alpha_ds_tree <- c("ssu_ps_pime")
+qvalue <- c(0,1,2)
+for (i in qvalue) {
+  for (j in ssu_alpha_ds_tree) {
+     tmp_asv <- get(purrr::map_chr(j, ~ paste0(., "_tu")))
+     tmp_tree <- get(purrr::map_chr(j, ~ paste0(., "_tree_ult")))
+     tmp_df <- data.frame(hill_div(tmp_asv, qvalue = i, tree = tmp_tree))
+     tmp_df <- tmp_df %>% dplyr::rename("tmp_name" = 1) %>%
+                              tibble::rownames_to_column("SamName")
+     tmp_name <- purrr::map_chr(j, ~ paste0(., "_ht", i))
+     print(tmp_name)
+     assign(tmp_name, tmp_df)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+objects(pattern="_ht")
+save(ssu_ps_pime_ht0, ssu_ps_pime_ht1, ssu_ps_pime_ht2, ssu_ps_pime_merge_ht0, 
+     ssu_ps_pime_merge_ht1, ssu_ps_pime_merge_ht2, 
+     file = "files/trepo/alpha/rdata/ssu_ps_pime_hill_tree_tests.rdata")
+```
+
+```{r}
+for (i in ssu_alpha_ds_tree) {
+     tmp_obs <- get(purrr::map_chr(i, ~ paste0(., "_ht0")))
+     tmp_sha <- get(purrr::map_chr(i, ~ paste0(., "_ht1")))
+     tmp_sim <- get(purrr::map_chr(i, ~ paste0(., "_ht2")))
+     tmp_hill <- dplyr::left_join(tmp_obs, tmp_sha, by = "SamName") %>%
+       dplyr::left_join(., tmp_sim, by = "SamName") %>%
+       dplyr::rename("Observed_pt" = 2, "Shannon_exp_pt" = 3, "InvSimpson_pt" = 4)
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_hill_t"))
+     assign(tmp_name, tmp_hill)
+     rm(list = ls(pattern = "tmp_"))
+}
+objects()
+```
+
+```{r, echo=FALSE}
+for (i in ssu_alpha_ds_tree) {
+     tmp_ps <- get(i)
+     tmp_hill <- get(purrr::map_chr(i, ~ paste0(., "_hill_t")))
+     tmp_hill_samp <- dplyr::left_join(data.frame(sample_data(tmp_ps)),
+                                         tmp_hill, by = "SamName")
+     tmp_hill_samp$ID <- tmp_hill_samp$SamName
+     tmp_hill_samp <- tmp_hill_samp %>%  tibble::column_to_rownames("ID")
+     tmp_ps2 <- merge_phyloseq(otu_table(tmp_ps),
+                                sample_data(tmp_hill_samp),
+                                tax_table(tmp_ps),
+                                phy_tree(tmp_ps))
+     assign(i, tmp_ps2)
+     tmp_path <- file.path("files/trepo/alpha/rdata/")
+     saveRDS(tmp_ps2, paste(tmp_path, i, ".rds", sep = ""))
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+
+### Sample Summary
+
+Now we summarize the data for each sample against all three metrics. The table contains the results of ASV diversity estimates from the full data set and the PIME filtered data set, as well as the lineage diversity from the PIME data set.
+
+The suffix `_p` indicates metrics for the PIME data set and the suffix `_pt` indicates the lineage diversity for the PIME data set.
+
+```{r, echo=FALSE}
+ssu_pime_hill_samp <- ssu_ps_pime_hill %>% dplyr::rename("Observed_p" = 2,
+                                                             "Shannon_exp_p" = 3,
+                                                             "InvSimpson_p" = 4)
+ssu_pime_hill_samp <- dplyr::left_join(ssu_pime_hill_samp, ssu_ps_pime_hill_t)
+ssu_pime_hill_samp <- ssu_pime_hill_samp[,c(1:2,5,3,6,4,7)]
+
+ssu_samp_data_tab <- dplyr::left_join(data.frame(sample_data(ssu_ps_work)), ssu_pime_hill_samp)
+ssu_samp_data_tab <- ssu_samp_data_tab[,c(1:7,10:11,8,12:13,9,14:15)]
+ssu_samp_data_tab <- ssu_samp_data_tab %>% dplyr::rename("sample_id" = "SamName")
+ssu_samp_data_tab <- ssu_samp_data_tab[order(ssu_samp_data_tab$sample_id), ]
+```
+
+
+<br/>
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+## elementId https://www.random.org/strings/
+datatable(ssu_samp_data_tab, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Sample summary table including
+            ASV diversity indices for FULL and PIME filtered data.
+            Use the buttons to navigate through the table or
+            download a copy.')),
+          elementId = "cbl6xscg20l628pi6qc4",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, -1), c("5", "All"))
+            )
+          ) %>%
+    DT::formatRound(columns = c(9:15),
+                    digits = 3) %>%
+    DT::formatStyle(columns = colnames(ssu_samp_data_tab),
+                    fontSize = '80%')
+```
+
+
+### Normality Tests
+
+Before running significance tests, we need to know if data is normally distributed, which will tell use whether to use a parametric or non-parametric test. To test if the data are normally distributed, we use the Shapiro-Wilk Normality test and the Bartlett Test of Homogeneity of Variances.
+
+If the p-values are both **not significant** (p > 0.05) from the tests, we accept the null hypothesis (that the results are normally distributed) and test for significance between samples using an ANOVA. If the p-values are both **significant** (p < 0.05), we reject the null hypothesis (that the results are normally distributed) and test for significance between samples using Kruskal-Wallis (non-parametric equivalent of ANOVA).
+
+The commands are as follows:
+
+`shapiro.test(x)`, where `x` is a numeric vector of alpha diversity  values from the sample data table.
+
+`bartlett.test(Value ~ Group, data = df)` Where `Value` is the metric of interest, `Group` in the treatment to compare, and `df` is the data frame.  
+
+First the Shapiro-Wilk Normality test.
+
+```{r}
+ssu_div_tab <- ssu_samp_data_tab
+ssu_shap_tests <- c()
+for (i in colnames(ssu_div_tab[,7:15])) {
+   tmp_name <- purrr::map_chr(i, ~ paste0("ssu_shap_", .))
+   ssu_shap_tests <- append(ssu_shap_tests, tmp_name)
+   tmp_test <- eval(shapiro.test(ssu_div_tab[[i]]))
+   tmp_test$data.name <- tmp_name
+   assign(tmp_name, tmp_test)
+   rm(list = ls(pattern = "tmp_"))
+}
+```
+
+And then the Bartlett Test of Homogeneity of Variances.
+
+```{r}
+ssu_div_tab <- ssu_samp_data_tab
+ssu_bart_tests <- c()
+for (i in colnames(ssu_div_tab[,7:15])) {
+   tmp_name <- purrr::map_chr(i, ~ paste0("ssu_bart_", .))
+   ssu_bart_tests <- append(ssu_bart_tests, tmp_name)
+   tmp_test <- eval(bartlett.test(ssu_div_tab[[i]] ~ SITE, data = ssu_div_tab))
+   tmp_test$data.name <- tmp_name
+   assign(tmp_name, tmp_test)
+   rm(list = ls(pattern = "tmp_"))
+}
+```
+
+Here we see which Shapiro-Wilk Normality **and** Bartlett tests were significant and which were not for the FULL data set analysis?
+
+```{r, eval=TRUE}
+for (i in colnames(ssu_div_tab[,7:15])) {
+  tmp_get_shap <- get(purrr::map_chr(i, ~ paste0("ssu_shap_", .)))
+  tmp_shap_p <- round(tmp_get_shap[[2]], 4)
+  tmp_get_bart <- get(purrr::map_chr(i, ~ paste0("ssu_bart_", .)))
+  tmp_bart_p <- round(tmp_get_bart[[3]], 4)
+  tmp_res <- eval(isTRUE(tmp_get_shap[[2]] > 0.05) & isTRUE(tmp_get_bart[[3]] > 0.05))
+  tmp_print <- c(i, "Shapiro p-value =", tmp_shap_p, 
+                 "Bartlett p-value =", tmp_bart_p, 
+                 "Are both p-values > 0.05?", tmp_res)
+  cat(tmp_print,"\n")
+  rm(list = ls(pattern = "tmp_"))
+}
+```
+
+So wherever the value of both p-values in `> 0.05` we can use an ANOVA, otherwise we use Kruskal-Wallis.
+
+### Significance Tests
+
+To begin, we need to create a hierarchy variable; a two-column matrix specifying the relationship between samples (first column) and groups (second column).
+
+```{r}
+ssu_hill_hier <- ssu_samp_data_tab
+ssu_hill_hier <- ssu_hill_hier %>% dplyr::select("sample_id", "SITE") %>%
+  tibble::remove_rownames()
+ssu_hill_hier <- ssu_hill_hier[order(ssu_hill_hier$SITE), ]
+#ssu_hill_hier$SITE = paste(ssu_hill_hier$SITE, 'C', sep='')
+# ADD NEXT LINE TO REORDER BY SITE
+#ssu_hill_hier <- ssu_hill_hier[order(factor(ssu_hill_hier$SITE,levels=c(c("ALMR", "PAST", "CRIS", "PUCL")))),]
+ssu_hill_hier <- ssu_hill_hier %>% tibble::remove_rownames()
+saveRDS(ssu_hill_hier, "files/trepo/alpha/rdata/ssu_hill_hier.rds")
+```
+
+Again, we start by testing significance of ASV diversity for the full data set against each of the three metrics using the `div_test` function.
+
+The command is as follows:
+
+`div_test(countable = x, qvalue = i, hierarchy = hier, tree = ultrametric_tree, posthoc = TRUE)`, where `x` is ASV by sample table, `i` is the q-value corresponding to the metric of interest, `hier` is the hierarchy matrix, `tree` is an ultrametric formatted phylogenetic tree (see below), and `posthoc` indicates whether to run post hoc pairwise analyses.
+
+```{r, results='hide'}
+ssu_alpha_ds_full <- c("ssu_ps_work", "ssu_ps_pime")
+qvalue <- c(0,1,2)
+for (i in ssu_alpha_ds_full) {
+     for (j in qvalue) {
+         tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_tu")))
+         tmp_test <- div_test(tmp_get, qvalue = j,
+                      hierarchy = ssu_hill_hier,
+                      posthoc = TRUE)
+         tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+         print(tmp_name)
+         assign(tmp_name, tmp_test)
+         rm(list = ls(pattern = "tmp_"))
+ }
+}
+objects(pattern = "_tu")
+```
+
+And then test significance of lineage diversity for the PIME filtered data set only.
+
+```{r, echo=FALSE}
+###!!!!!!!!!!!!!!!!!!!!!!!!#####
+### LOAD  AFTER INITIAL ANALYSIS
+load("files/trepo/alpha/rdata/ssu_ps_pime_hill_lineage_test.rdata")
+```
+
+```{r, results='hide'}
+ssu_alpha_ds_full_tree <- c("ssu_ps_pime")
+qvalue <- c(0,1,2)
+for (i in ssu_alpha_ds_full_tree) {
+     for (j in qvalue) {
+         tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_tu")))
+         tmp_tree <- get(purrr::map_chr(i, ~ paste0(., "_tree_ult")))
+         tmp_test <- div_test(tmp_get, qvalue = j,
+                      hierarchy = ssu_hill_hier,
+                      posthoc = TRUE,
+                      tree = tmp_tree)
+         tmp_name <- purrr::map_chr(i, ~ paste0(., "_t_q", j, "_adt"))
+         print(tmp_name)
+         assign(tmp_name, tmp_test)
+         rm(list = ls(pattern = "tmp_"))
+ }
+}
+save(ssu_ps_pime_t_q0_adt, ssu_ps_pime_t_q1_adt, ssu_ps_pime_t_q2_adt, 
+     file = "files/trepo/alpha/rdata/ssu_ps_pime_hill_lineage_test.rdata")
+```
+
+
+```{r, echo=FALSE}
+tmp_objects <- c("ssu_ps_work", "ssu_ps_pime", "ssu_ps_pime_t")
+
+tmp_metric <- data.frame(c("Observed", "Shannon exponential", "Inverse Simpson"))
+tmp_qvalue <- data.frame(c("0", "1", "2"))
+
+qvalue <- c(0,1,2)
+for (i in tmp_objects) {
+
+  tmp_h_pvalue <- c()
+     for (j in qvalue) {
+          tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+          tmp_get <- get(tmp_name)$homogeneity.pvalue
+          tmp_h_pvalue <- c(append(tmp_h_pvalue, tmp_get))
+     }
+  tmp_h_pvalue <- data.frame(tmp_h_pvalue)
+
+  tmp_n_pvalue <- c()
+      for (j in qvalue) {
+          tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+          tmp_get <- get(tmp_name)$normality.pvalue
+          tmp_n_pvalue <- c(append(tmp_n_pvalue, tmp_get))
+     }
+  tmp_n_pvalue <- data.frame(tmp_n_pvalue)
+
+  tmp_method <- c()
+      for (j in qvalue) {
+          tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+          tmp_get <- get(tmp_name)$method
+          tmp_method <- c(append(tmp_method, tmp_get))
+     }
+  tmp_method <- data.frame(tmp_method)
+
+  tmp_phoc_method <- c()
+      for (j in qvalue) {
+          tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+          tmp_get <- get(tmp_name)$posthoc.method
+          tmp_phoc_method <- c(append(tmp_phoc_method, tmp_get))
+     }
+  tmp_phoc_method <- data.frame(tmp_phoc_method)
+
+  tmp_df <- dplyr::bind_cols(tmp_metric, tmp_qvalue) %>%
+                     dplyr::bind_cols(., tmp_n_pvalue) %>%
+                     dplyr::bind_cols(., tmp_h_pvalue) %>%
+                     dplyr::bind_cols(., tmp_method) %>%
+                     dplyr::bind_cols(., tmp_phoc_method) %>%
+  dplyr::rename("metric" = 1, "q-value" = 2, "normality p-value" = 3, 
+                "homogeneity p-value" = 4, "method" = 5, "posthoc method" = 6)
+  tmp_name <- purrr::map_chr(i, ~ paste0(i, "_sig_tab"))
+  assign(tmp_name, tmp_df)
+}
+objects(pattern="_sig_tab")
+```
+
+
+```{r, echo=FALSE}
+## Format as follows:
+## FALSE Kruskal-Wallis Test = ssu_ps_pime_q1_adt$test[[3]]
+## TRUE Tukey post-hoc  =      ssu_ps_work_q1_adt$test[[1]][[1, 5]]
+
+tmp_pvalue <- data.frame(c(ssu_ps_work_q0_adt$test[[3]],
+                           ssu_ps_work_q1_adt$test[[3]],
+                           ssu_ps_work_q2_adt$test[[3]]))
+ssu_ps_work_sig_tab <- dplyr::bind_cols(ssu_ps_work_sig_tab, tmp_pvalue) %>%
+                         dplyr::rename("posthoc p-value" = 7)
+#####################################################################################
+tmp_pvalue <- data.frame(c(ssu_ps_pime_q0_adt$test[[3]],
+                           ssu_ps_pime_q1_adt$test[[3]],
+                           ssu_ps_pime_q2_adt$test[[3]]))
+ssu_ps_pime_sig_tab <- dplyr::bind_cols(ssu_ps_pime_sig_tab, tmp_pvalue) %>%
+                         dplyr::rename("posthoc p-value" = 7)
+#####################################################################################
+tmp_pvalue <- data.frame(c(ssu_ps_pime_t_q0_adt$test[[3]],
+                           ssu_ps_pime_t_q1_adt$test[[3]],
+                           ssu_ps_pime_t_q2_adt$test[[3]]))
+ssu_ps_pime_t_sig_tab <- dplyr::bind_cols(ssu_ps_pime_t_sig_tab, tmp_pvalue) %>%
+                         dplyr::rename("posthoc p-value" = 7)
+#####################################################################################
+
+rm(list = ls(pattern = "tmp_"))
+```
+
+<br/>
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+knitr::kable(ssu_ps_work_sig_tab)
+```
+*Summary of significant tests (**ASV diversity**).*
+
+<br/>
+
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+knitr::kable(ssu_ps_pime_sig_tab)
+```
+*Summary of significant tests for PIME filtered data  (**ASV diversity**).*
+
+<br/>
+
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+knitr::kable(ssu_ps_pime_t_sig_tab)
+```
+*Summary of significant tests  the PIME filtered data  (**ASV Lineage diversity**).*
+
+<br/>
+
+
+### PostHoc Analyses
+
+First let's check the results of each posthoc analysis.
+
+<details markdown="1">
+<summary>Detailed results of PostHoc Analyses for each metric</summary>
+
+#### Observed (q-value = 0)
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvf0_lab <- "ASV diversity FULL data set (Observed)"
+ssu_asvf0_lab
+ssu_ps_work_q0_adt$posthoc.method
+data.frame(ssu_ps_work_q0_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvp0_lab <- "ASV diversity PIME data set (Observed)"
+ssu_asvp0_lab
+ssu_ps_pime_q0_adt$posthoc.method
+data.frame(ssu_ps_pime_q0_adt$posthoc)
+```
+
+```{r eval=TRUE, echo=FALSE, results='hold', comment=''}
+ssu_asvpt0_lab <- "Lineage diversity PIME data set (Observed)"
+ssu_asvpt0_lab
+ssu_ps_pime_t_q0_adt$posthoc.method
+data.frame(ssu_ps_pime_t_q0_adt$posthoc)
+```
+
+#### Shannon exponential (q-value = 1)
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvf1_lab <- "ASV diversity FULL data set(Shannon exponential)"
+ssu_asvf1_lab
+ssu_ps_work_q1_adt$posthoc.method
+data.frame(ssu_ps_work_q1_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvp1_lab <- "ASV diversity PIME data set (Shannon exponential)"
+ssu_asvp1_lab
+ssu_ps_pime_q1_adt$posthoc.method
+data.frame(ssu_ps_pime_q1_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvpt1_lab <- "Lineage diversity PIME data set (Shannon exponential)"
+ssu_asvpt1_lab
+ssu_ps_pime_t_q1_adt$posthoc.method
+data.frame(ssu_ps_pime_t_q1_adt$posthoc)
+```
+
+#### Simpson multiplicative (i.e., Inverse Simpson) (q-value = 2)
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvf2_lab <- "ASV diversity FULL data set (Inverse Simpson)"
+ssu_asvf2_lab
+ssu_ps_work_q2_adt$posthoc.method
+data.frame(ssu_ps_work_q2_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvp2_lab <- "ASV diversity PIME data set (Inverse Simpson)"
+ssu_asvp2_lab
+ssu_ps_pime_q2_adt$posthoc.method
+data.frame(ssu_ps_pime_q2_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvpt2_lab <- "Lineage diversity PIME data set (Inverse Simpson)"
+ssu_asvpt2_lab
+ssu_ps_pime_t_q2_adt$posthoc.method
+data.frame(ssu_ps_pime_t_q2_adt$posthoc)
+```
+</details>
+
+### Alpha Diversity Plots
+
+Now we can plot the results from the posthoc analyses for each metric and data set using the function `div_test_plot_jjs`. I modified the orihginal function (`div_test_plot`) to control a little of the formatting.
+
+The command is as follows:
+
+`div_test_plot(divtest = x, chart = "type", colour = col.pal, posthoc = TRUE, threshold = value))`, where `x` is the results from the `div_test` function, `"type"` is chart type (box, jitter, or violin),`colour` is is a color palette, `posthoc` indicates whether to run posthoc pairwise analyses, and `value` is the maximum p-value to show in pairwise posthoc results. **WARNING** if none of the posthoc results are below the specified threshold, the function will throw an error. Therefore, until this is fixed, all posthoc values are shown.
+
+```{r}
+source("hack_code/div_test_plot_jjs.R")
+rm(list=ls(pattern="_adt_plot"))
+for (i in objects(pattern="_adt")) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_plot"))
+     tmp_get <- get(i)
+     tmp_get$data <- tmp_get$data[order(factor(tmp_get$data$Group,
+                                levels=c(c("ALMR", "PAST", "CRIS", "PUCL")))),]
+     tmp_get$data <- tmp_get$data %>% tibble::remove_rownames()
+     tmp_df <- div_test_plot_jjs(tmp_get, chart = "box",
+                                 colour	= swel_col, posthoc = TRUE)
+     tmp_df <- ggpar(tmp_df, legend = "none")
+     print(tmp_name)
+     assign(tmp_name, tmp_df)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, echo=FALSE, eval=FALSE}
+ssu_ps_work_q0_adt_plot <- ssu_ps_work_q0_adt_plot +
+                             theme(axis.title.x = element_blank()) +
+                             ggtitle(ssu_asvf0_lab)
+ssu_ps_pime_q0_adt_plot <- ssu_ps_pime_q0_adt_plot +
+                             theme(axis.title.y = element_blank(),
+                             axis.title.x = element_blank()) +
+                             ggtitle(ssu_asvp0_lab)
+ssu_ps_pime_t_q0_adt_plot <- ssu_ps_pime_t_q0_adt_plot +
+                               theme(axis.title.y = element_blank(),
+                               axis.title.x = element_blank()) +
+                               ggtitle(ssu_asvpt0_lab)
+
+ssu_ps_work_q1_adt_plot <- ssu_ps_work_q1_adt_plot +
+                             theme(axis.title.x = element_blank()) +
+                             ggtitle(ssu_asvf1_lab)
+ssu_ps_pime_q1_adt_plot <- ssu_ps_pime_q1_adt_plot +
+                             theme(axis.title.y = element_blank(),
+                             axis.title.x = element_blank()) +
+                             ggtitle(ssu_asvp1_lab)
+ssu_ps_pime_t_q1_adt_plot <- ssu_ps_pime_t_q1_adt_plot +
+                               theme(axis.title.y = element_blank(),
+                               axis.title.x = element_blank()) +
+                               ggtitle(ssu_asvpt1_lab)
+
+ssu_ps_work_q2_adt_plot <- ssu_ps_work_q2_adt_plot +
+                             ggtitle(ssu_asvf2_lab)
+ssu_ps_pime_q2_adt_plot <- ssu_ps_pime_q2_adt_plot +
+                             theme(axis.title.y = element_blank()) +
+                             ggtitle(ssu_asvp2_lab)
+ssu_ps_pime_t_q2_adt_plot <- ssu_ps_pime_t_q2_adt_plot +
+                               theme(axis.title.y = element_blank()) +
+                               ggtitle(ssu_asvpt2_lab)
+
+ssu_alph_div_plots_asv <- ggarrange(
+  ssu_ps_work_q0_adt_plot, ssu_ps_pime_q0_adt_plot, ssu_ps_pime_t_q0_adt_plot,
+  ssu_ps_work_q1_adt_plot, ssu_ps_pime_q1_adt_plot, ssu_ps_pime_t_q1_adt_plot,
+  ssu_ps_work_q2_adt_plot, ssu_ps_pime_q2_adt_plot, ssu_ps_pime_t_q2_adt_plot,
+  ncol=3, nrow = 3)
+
+ssu_alph_div_plots_asv
+dev.off()
+png("files/trepo/alpha/figures/ssu_alph_div_plots_asv.png",
+    height=32, width=40, units = 'cm', res = 600, bg = "white")
+ssu_alph_div_plots_asv
+dev.off()
+pdf("files/trepo/alpha/figures/ssu_alph_div_plots_asv.pdf",
+    height = 10, width = 12)
+ssu_alph_div_plots_asv
+dev.off()
+```
+
+
+<br/>
+
+Posthoc adjusted p-values given for each pairwise comparison.
+
+```{r, echo=FALSE, warning=FALSE, fig.height=5, layout='l-page', eval=TRUE, fig.cap='**Top row** = Observed; **middle row** = Shannon exponential; **bottom row** = Inverse Simpson. **Left** = ASV diversity full data set; **middle** = ASV diversity PIME data set; **right** = Lineage diversity PIME data set.'}
+system("cp files/trepo/alpha/figures/ssu_alph_div_plots_asv.png include/trepo/alpha/ssu_alph_div_plots_asv.png")
+knitr::include_graphics("include/trepo/alpha/ssu_alph_div_plots_asv.png")
+```
+
+```{r, echo=FALSE}
+rm(ssu_ps_work, ssu_ps_pime, ssu_ps_work_otu, ssu_ps_pime_otu, ssu_amp_data, ssu_ps_pime_norm, ssu_ps_work_norm)
+save.image("page_build/trepo/alpha_ssu_alpha_full_wf_part1.rdata")
+```
+
+## Alpha Diversity by Site
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #2
+remove(list = ls())
+load("page_build/trepo/alpha_ssu_alpha_full_wf_part2.rdata")
+#objects()
+```
+
+
+```{r, include=FALSE}
+## Initial Load for  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+## ASV FULL AND PIME
+ssu_ps_work <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work.rds")
+ssu_ps_pime <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime.rds")
+ssu_ps_pime_ALMR <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime_ALMR.rds")
+ssu_ps_pime_CRIS <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime_CRIS.rds")
+ssu_ps_pime_PAST <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime_PAST.rds")
+ssu_ps_pime_PUCL <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime_PUCL.rds")
+```
+
+
+Next, we calculate alpha diversity for each site using `alpha_div()` function, which computes a single alpha diversity value for a **group of samples**. So we need to create/use data frames containing samples split by group. If a tree object is provided, the computed alpha diversity is based on lineage diversity. We will run the analysis on the FULL and PIME data sets, both with and without trees.
+
+The command is as follows:
+
+`alpha_div(countable = x, qvalue = j, tree = ultrametric_tree)`, where `x` is a count table , `j` is the q-value corresponding to the metric of interest, and `tree` is an ultrametric formatted phylogenetic tree.
+
+### Full data set split by site
+
+We will start by splitting the full data set by treatment then generating new trees and ASV tables for each split.
+
+```{r}
+site <- c("ALMR","PAST","CRIS", "PUCL")
+for (i in site) {
+     tmp_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_", .))
+     tmp_ps <- subset_samples(ssu_ps_work, SITE == i)
+     tmp_ps <-  prune_taxa(taxa_sums(tmp_ps) > 0, tmp_ps)
+     tmp_ps@phy_tree <- NULL
+     tmp_ps_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE,
+                            tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_ps_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     tmp_asv <- purrr::map_chr(tmp_name, ~ paste0(., "_tu"))
+     tmp_get <- get(tmp_name)
+     tmp_get_asv <- t(otu_table(tmp_get))
+     print(tmp_asv)
+     assign(tmp_asv, tmp_get_asv)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold'}
+ssu_ps_work_ALMR <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_ALMR.rds")
+ssu_ps_work_PAST <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_PAST.rds")
+ssu_ps_work_CRIS <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_CRIS.rds")
+ssu_ps_work_PUCL <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_PUCL.rds")
+ssu_ps_work_ALMR
+ssu_ps_work_PAST
+ssu_ps_work_CRIS
+ssu_ps_work_PUCL
+```
+
+```{r, echo=FALSE}
+saveRDS(ssu_ps_work_ALMR, "files/trepo/alpha/rdata/ssu_ps_work_ALMR.rds")
+saveRDS(ssu_ps_work_PAST, "files/trepo/alpha/rdata/ssu_ps_work_PAST.rds")
+saveRDS(ssu_ps_work_CRIS, "files/trepo/alpha/rdata/ssu_ps_work_CRIS.rds")
+saveRDS(ssu_ps_work_PUCL, "files/trepo/alpha/rdata/ssu_ps_work_PUCL.rds")
+```
+
+As mentioned above, any tree used in the `hilldv` package must be **ultrametric**. So we need to convert the trees in order to look at lineage diversity. We will also save copies of each tree since this process takes a while to run.
+
+```{r}
+site <- c("ALMR","PAST","CRIS", "PUCL")
+for (i in site) {
+     tmp_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_", .))
+     tmp_name_tr <- purrr::map_chr(tmp_name, ~ paste0(., "_tree_ult"))
+     tmp_get_name <- get(tmp_name)
+     tmp_ult_tree <- force.ultrametric(tmp_get_name@phy_tree, method=c("extend"))
+     print(tmp_name_tr)
+     assign(tmp_name_tr, tmp_ult_tree)
+     save_name <- purrr::map_chr(tmp_name_tr, ~ paste0("files/trepo/alpha/rdata/", ., ".rds"))
+     tree <- get(tmp_name_tr)
+     saveRDS(tree, save_name)
+     rm(list = ls(pattern = "tmp_"))
+     rm(save_name)
+}
+```
+
+```{r}
+qvalue <- c(0,1,2)
+for (i in site) {
+  for (j in qvalue){
+     tmp_asv_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_", ., "_tu"))
+     tmp_asv_name <- get(tmp_asv_name)
+     tmp_div_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_", ., "_aldiv_", j))
+     print(tmp_div_name)
+     tmp_alpha_div <- alpha_div(countable = tmp_asv_name, qvalue = j)
+     assign(tmp_div_name, tmp_alpha_div)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r}
+qvalue <- c(0,1,2)
+for (i in site) {
+  for (j in qvalue){
+     tmp_asv_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_", ., "_tu"))
+     tmp_asv_name <- get(tmp_asv_name)
+     tmp_tree_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_", ., "_tree_ult"))
+     tmp_tree_name <- get(tmp_tree_name)
+     tmp_div_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_", ., "_aldiv_", j, "t"))
+     print(tmp_div_name)
+     tmp_alpha_div <- alpha_div(countable = tmp_asv_name, qvalue = j, tree = tmp_tree_name)
+     assign(tmp_div_name, tmp_alpha_div)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+### PIME filtered data set
+
+For this step, we will use the PIME data set. We start by making new trees and ASV tables for each split.
+
+
+```{r}
+for (i in site) {
+     tmp_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_", .))
+     tmp_ps <- get(tmp_name)
+     tmp_ps@phy_tree <- NULL
+     tmp_ps_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE,
+                            tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_ps_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     tmp_asv_name <- purrr::map_chr(tmp_name, ~ paste0(., "_tu"))
+     tmp_get <- get(tmp_name)
+     tmp_asv_tab <- t(otu_table(tmp_get))
+     print(tmp_asv_name)
+     assign(tmp_asv_name, tmp_asv_tab)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+
+```{r}
+for (i in site) {
+     tmp_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_", .))
+     tmp_tr_name <- purrr::map_chr(tmp_name, ~ paste0(., "_tree_ult"))
+     tmp_get_name <- get(tmp_name)
+     ultra_tree <- force.ultrametric(tmp_get_name@phy_tree, method=c("extend"))
+     print(tmp_tr_name)
+     assign(tmp_tr_name, ultra_tree)
+     tmp_save_name <- purrr::map_chr(tmp_tr_name, ~ paste0("files/trepo/alpha/rdata/", ., ".rds"))
+     tmp_tree <- get(tmp_tr_name)
+     saveRDS(tmp_tree, tmp_save_name)
+     rm(list = ls(pattern = "tmp_"))
+     rm(ultra_tree)
+}
+```
+
+
+```{r}
+qvalue <- c(0,1,2)
+for (i in site) {
+  for (j in qvalue){
+     tmp_asv_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_", ., "_tu"))
+     tmp_asv_name <- get(tmp_asv_name)
+     tmp_spl_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_", ., "_tree_ult"))
+     tmp_spl_name <- get(tmp_spl_name)
+     tmp_div_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_", ., "_aldiv_", j))
+     print(tmp_div_name)
+     tmp_alpha_div <- alpha_div(countable = tmp_asv_name, qvalue = j)
+     assign(tmp_div_name, tmp_alpha_div)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r}
+qvalue <- c(0,1,2)
+for (i in site) {
+  for (j in qvalue){
+     tmp_asv_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_", ., "_tu"))
+     tmp_asv_name <- get(tmp_asv_name)
+     tmp_spl_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_", ., "_tree_ult"))
+     tmp_spl_name <- get(tmp_spl_name)
+     tmp_div_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_", ., "_aldiv_", j, "t"))
+     print(tmp_div_name)
+     tmp_alpha_div <- alpha_div(countable = tmp_asv_name, qvalue = j, tree = tmp_spl_name)
+     assign(tmp_div_name, tmp_alpha_div)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+
+```{r, echo=FALSE}
+tmp_alpha_metric <- data.frame(t(c("Observed (q = 0)",
+                                   "Shannon exponential (q = 1)",
+                                   "Inverse Simpson (q = 2)")))
+####################################
+tmp_data_set_df <- objects(pattern="[A-Z]+_aldiv_0")
+tmp_data_set_df <- tmp_data_set_df %>%
+  stringr::str_replace_all(c("ssu_ps_pime_[A-Z]+_aldiv_0.?" = "pime",
+                             "ssu_ps_work_[A-Z]+_aldiv_0.?" = "full"))
+tmp_data_set_df <- data.frame(c(tmp_data_set_df))
+####################################
+tmp_temp_df <- objects(pattern="[A-Z]+_aldiv_0")
+tmp_temp_df <- tmp_temp_df %>%
+  stringr::str_replace_all(c("ssu_ps_[a-z]{4}_" = "",
+                             "_aldiv_0.?" = ""))
+tmp_temp_df <- data.frame(c(tmp_temp_df))
+####################################
+tmp_type_df <- objects(pattern="[A-Z]+_aldiv_0")
+tmp_type_df <- tmp_type_df %>%
+  stringr::str_replace_all(c("ssu_ps_[a-z]{4}_[A-Z]+_aldiv_0$" = "asv",
+                             "ssu_ps_[a-z]{4}_[A-Z]+_aldiv_0t" = "lineage"))
+tmp_type_df <- data.frame(c(tmp_type_df))
+####################################
+tmp_observed_df <- c()
+for (i in objects(pattern="[A-Z]+_aldiv_0")) {
+   tmp_get <- get(i)
+   tmp_observed_df <- c(append(tmp_observed_df, tmp_get))
+   rm(tmp_get)
+}
+tmp_observed_df <- data.frame(tmp_observed_df)
+
+tmp_shannon_df <- c()
+for (i in objects(pattern="[A-Z]+_aldiv_1")) {
+   tmp_get <- get(i)
+   tmp_shannon_df <- c(append(tmp_shannon_df, tmp_get))
+   rm(tmp_get)
+}
+tmp_shannon_df <- data.frame(tmp_shannon_df)
+
+tmp_simpson_df <- c()
+for (i in objects(pattern="[A-Z]+_aldiv_2")) {
+   tmp_get <- get(i)
+   tmp_simpson_df <- c(append(tmp_simpson_df, tmp_get))
+   rm(tmp_get)
+}
+tmp_simpson_df <- data.frame(tmp_simpson_df)
+####################################
+tab_alpha_div <- dplyr::bind_cols(tmp_data_set_df, tmp_temp_df) %>%
+                     dplyr::bind_cols(., tmp_type_df) %>%
+                     dplyr::bind_cols(., tmp_observed_df) %>%
+                     dplyr::bind_cols(., tmp_shannon_df) %>%
+                     dplyr::bind_cols(., tmp_simpson_df) %>%
+  dplyr::rename("data set" = 1,
+                "site" = 2,
+                "type" = 3,
+                "Observed (q = 0)" = 4,
+                "Shannon exponential (q = 1)" = 5,
+                "Inverse Simpson (q = 2)" = 6
+                )
+ssu_tab_alpha_div <- tab_alpha_div[with(tab_alpha_div, order(`data set`, type, site)), ]
+rm(list = ls(pattern = "tmp_"))
+rm(tab_alpha_div)
+```
+
+<br/>
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+knitr::kable(ssu_tab_alpha_div, row.names = FALSE)
+```
+*Alpha diversity for sample groups from the full and PIME filtered data.*
+<br/>
+
+```{r, echo=FALSE, layout="l-page", eval=FALSE}
+## elementId https://www.random.org/strings/
+datatable(ssu_tab_alpha_div, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Alpha diversity for sample groups
+            from the full and PIME filtered data.
+            Use the buttons to navigate through the table or
+            download a copy.')),
+          elementId = "eabrx5a7rocz5vkms1lq",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, -1), c("5", "All"))
+            )
+          ) %>%
+    DT::formatRound(columns = c(4:6),
+                    digits = 3) %>%
+    DT::formatStyle(columns = colnames(ssu_tab_alpha_div),
+                    fontSize = '80%')
+```
+
+```{r, echo=FALSE}
+rm(ssu_ps_work, ssu_ps_pime)
+rm(list = ls(pattern = "_ALMR$"))
+rm(list = ls(pattern = "_CRIS$"))
+rm(list = ls(pattern = "_PAST$"))
+rm(list = ls(pattern = "_PUCL$"))
+save.image("page_build/trepo/alpha_ssu_alpha_full_wf_part2.rdata")
+```
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #2
+remove(list = ls())
+```
+
+# Merged Data Set (ASV)
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #2
+remove(list = ls())
+load("page_build/trepo/alpha_ssu_alpha_merge_wf_part1.rdata")
+#objects()
+```
+
+```{r, include=FALSE}
+## Initial Load for  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+## MERGED DATASET
+## ASV MERGED AND PIME
+ssu_ps_work_merge <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work_merge.rds")
+ssu_ps_pime_merge <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime.rds")
+## DATA for Hist & RARE
+ssu_amp_data <- readRDS("files/trepo/data-prep/rdata/ssu_amp_merge_data.rds")
+ssu_ps_samp_data <- sample_data(ssu_ps_work_merge)
+
+ssu_ps_samp_data$total_reads <- readcount(ssu_ps_work_merge)
+ssu_pime_samp_data <- sample_data(ssu_ps_pime_merge)
+ssu_pime_samp_data$total_reads <- readcount(ssu_ps_pime_merge)
+objects()
+```
+
+
+```{r, echo=FALSE}
+swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
+```
+
+## Read Distribution
+
+### Histogram of Read Counts
+
+```{r, warning=FALSE}
+ssu_max <- max(ssu_ps_samp_data$total_reads) +
+  (0.2 * max(ssu_ps_samp_data$total_reads))
+ssu_p_hist <- ggplot(ssu_ps_samp_data,
+       aes(ssu_ps_samp_data$total_reads)) +
+         geom_histogram(breaks = seq(0, ssu_max, by = 5000),
+                        col = "black", fill = "grey") +
+         labs(title = "Distribution of total reads (MERGED)",
+              caption = "Bin width equals 5000 reads") +
+  labs(x = "No. of reads", y = "No. of samples") +
+  theme_classic()
+```
+
+```{r, fig.height=3, echo=FALSE, layout='l-body', eval=TRUE}
+ssu_p_hist
+```
+
+### Rarefaction Curves
+
+```{r}
+tmp_select <- ssu_amp_data
+tmp_select$metadata$SITE <- factor(tmp_select$metadata$SITE, 
+                                   levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+ssu_rare_curve1 <- amp_rarecurve(
+  tmp_select,
+  stepsize = 1000,
+  color_by = "SITE"
+) + scale_colour_manual(values = swel_col) 
+```
+
+
+```{r fig.height=3, layout='l-body-outset', eval=TRUE}
+ssu_rare_curve1  
+```
+
+
+For a quick comparison, we can facet the above data by Site.
+
+```{r}
+ssu_rare_curve2 <- amp_rarecurve(
+  tmp_select,
+  stepsize = 1000,
+  color_by = "SITE",
+  facet_by = "SITE",
+  facet_scales = "free"
+)  + scale_colour_manual(values = swel_col)
+```
+
+```{r fig.height=6, layout='l-body-outset', eval=TRUE}
+ssu_rare_curve2
+```
+
+
+In the **full** data set, there was a minimum read count of `r min(ssu_ps_samp_data$total_reads)`, a median of `r median(ssu_ps_samp_data$total_reads)` reads, and a maximum of `r max(ssu_ps_samp_data$total_reads)` reads. After PIME filtering, there was a minimum read count of `r min(ssu_pime_samp_data$total_reads)`, a median of `r median(ssu_pime_samp_data$total_reads)` reads, and a maximum of `r max(ssu_pime_samp_data$total_reads)` reads.
+
+## Alpha Diversity
+
+To account for presence of rare sequence variants caused by sequencing errors or other technical artifacts, we use Hill numbers [@alberdi2019guide]. Hill numbers allow the weight put on rare versus abundant sequence variants to be scaled while providing intuitive comparisons of diversity levels using “effective number of ASVs” as a measuring unit. This approach allows for balancing the over representation of rare ASVs that might be inflated due to sequencing errors.
+
+We will then use Shapiro-Wilk tests to test for normalcy and then, depending on the results, either use  parametric ANOVA or non-parametric Kruskal-Wallis to compare alpha diversity among treatments.
+
+### Calculate Hill Numbers
+
+To calculate Hill numbers, we use the R package `hilldiv` [@alberdi2019hilldiv]. We calculate three metrics that put more or less weight on common species:
+
+1) Observed richness, where `q-value = 0`.
+2) Shannon exponential, which weighs ASVs by their frequency,  where `q-value = 1`.
+3) Simpson multiplicative inverse, which over weighs abundant ASVs,  where `q-value = 2`.
+
+We perform each analysis against the full data set and the PIME filtered data set using the function `hill_div`.
+
+The command is as follows:
+
+`hill_div(count = x, qvalue = i, tree = ultrametric_tree)`, where `x` is the sample by ASV table, `i` is the q-value corresponding to the metric of interest and `tree` is an ultrametric formatted phylogenetic tree (see below).
+
+We first transform all the data to relative abundance values, and compute new trees.
+
+```{r}
+ssu_alpha_ds <- c("ssu_ps_work_merge", "ssu_ps_pime_merge")
+objects()
+```
+
+```{r}
+for (i in ssu_alpha_ds) {
+  tmp_ps <- transform_sample_counts(get(i), function(otu) otu/sum(otu))
+  tmp_ps@phy_tree <- NULL
+  tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE,
+                      tip.label = taxa_names(tmp_ps))
+  tmp_ps_norm <- merge_phyloseq(tmp_ps, sample_data, tmp_tree)
+  tmp_asv <- data.frame(t(otu_table(tmp_ps_norm)))
+  tmp_ps_name <- purrr::map_chr(i, ~ paste0(., "_norm"))
+  assign(tmp_ps_name, tmp_ps_norm)
+  tmp_asv_name <- purrr::map_chr(i, ~ paste0(., "_tu"))
+  assign(tmp_asv_name, tmp_asv)
+  rm(list = ls(pattern = "tmp_"))
+}
+```
+
+#### No phylogenetic tree
+
+Next, we run the analysis for all three metrics on the data sets without a tree.
+
+```{r, results='hide'}
+qvalue <- c(0,1,2)
+for (i in qvalue) {
+  for (j in ssu_alpha_ds) {
+     tmp_asv <- get(purrr::map_chr(j, ~ paste0(., "_tu")))
+     tmp_df <- data.frame(hill_div(tmp_asv, qvalue = i))
+     tmp_df <- tmp_df %>% dplyr::rename("tmp_name" = 1) %>%
+                              tibble::rownames_to_column("SamName")
+     tmp_name <- purrr::map_chr(j, ~ paste0(., "_h", i))
+     print(tmp_name)
+     assign(tmp_name, tmp_df)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+objects(pattern = "_h")
+```
+
+And make summary tables to add back into each `ps` object.
+
+```{r}
+for (i in ssu_alpha_ds) {
+     tmp_obs <- get(purrr::map_chr(i, ~ paste0(., "_h0")))
+     tmp_sha <- get(purrr::map_chr(i, ~ paste0(., "_h1")))
+     tmp_sim <- get(purrr::map_chr(i, ~ paste0(., "_h2")))
+     tmp_hill <- dplyr::left_join(tmp_obs, tmp_sha, by = "SamName") %>%
+       dplyr::left_join(., tmp_sim, by = "SamName") %>%
+       dplyr::rename("Observed" = 2, "Shannon_exp" = 3, "InvSimpson" = 4)
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_hill"))
+     assign(tmp_name, tmp_hill)
+     rm(list = ls(pattern = "tmp_"))
+}
+objects(pattern = "_hill")
+```
+
+And then create the new objects with the diversity data.
+
+```{r, echo=FALSE}
+for (i in ssu_alpha_ds) {
+     tmp_ps <- get(i)
+     tmp_hill <- get(purrr::map_chr(i, ~ paste0(., "_hill")))
+     tmp_hill_samp <- dplyr::left_join(data.frame(sample_data(tmp_ps)),
+                                         tmp_hill, by = "SamName")
+     tmp_hill_samp$ID <- tmp_hill_samp$SamName
+     tmp_hill_samp <- tmp_hill_samp %>%  tibble::column_to_rownames("ID")
+     tmp_ps2 <- merge_phyloseq(otu_table(tmp_ps),
+                                sample_data(tmp_hill_samp),
+                                tax_table(tmp_ps),
+                                phy_tree(tmp_ps))
+     assign(i, tmp_ps2)
+     tmp_path <- file.path("files/trepo/alpha/rdata/")
+     saveRDS(tmp_ps2, paste(tmp_path, i, ".rds", sep = ""))
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+#### With a phylogenetic tree
+
+We can also run the tests using the phylogenetic tree to assess **lineage** diversity rather that ASV diversity for the PIME data set. For this part we will only use PIME filtered data sets. We do a quick check	to ensure	the	ASV	names	in	the	ASV	table	and	the	tip	names	in	the	new phylogenetic tree	are	identical.
+
+```{r, echo=FALSE}
+###!!!!!!!!!!!!!!!!!!!!!!!!#####
+### LOAD THESE AFTER INITIAL ANALYSIS
+#ssu_ps_pime_tree_ult <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime_tree_ult.rds")
+load("files/trepo/alpha/rdata/ssu_ps_pime_hill_tree_tests.rdata")
+objects()
+```
+
+```{r, echo=FALSE}
+ssu_alpha_ds_tree <- c("ssu_ps_pime_merge")
+for (i in ssu_alpha_ds_tree) {
+     tmp_ps <- get(i)
+     tmp_tree <- tmp_ps@phy_tree
+     tmp_tree_ult <- force.ultrametric(tmp_tree, method=c("extend"))
+     tmp_tree_name <- purrr::map_chr(i, ~ paste0(., "_tree_ult"))
+     assign(tmp_tree_name, tmp_tree_ult)
+     tmp_path <- file.path("files/trepo/alpha/rdata/")
+     saveRDS(tmp_tree_ult, paste(tmp_path, tmp_tree_name, ".rds", sep = ""))
+     tmp_tmp_asv <- get(purrr::map_chr(i, ~ paste0(., "_tu")))
+     print(identical(sort(rownames(tmp_tmp_asv)), sort(tmp_tree_ult$tip.label)))
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, results='hide'}
+ssu_alpha_ds_tree <- c("ssu_ps_pime_merge")
+qvalue <- c(0,1,2)
+for (i in qvalue) {
+  for (j in ssu_alpha_ds_tree) {
+     tmp_asv <- get(purrr::map_chr(j, ~ paste0(., "_tu")))
+     tmp_tree <- get(purrr::map_chr(j, ~ paste0(., "_tree_ult")))
+     tmp_df <- data.frame(hill_div(tmp_asv, qvalue = i, tree = tmp_tree))
+     tmp_df <- tmp_df %>% dplyr::rename("tmp_name" = 1) %>%
+                              tibble::rownames_to_column("SamName")
+     tmp_name <- purrr::map_chr(j, ~ paste0(., "_ht", i))
+     print(tmp_name)
+     assign(tmp_name, tmp_df)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+objects(pattern="_ht")
+save(ssu_ps_pime_ht0, ssu_ps_pime_ht1, ssu_ps_pime_ht2, ssu_ps_pime_merge_ht0, 
+     ssu_ps_pime_merge_ht1, ssu_ps_pime_merge_ht2, 
+     file = "files/trepo/alpha/rdata/ssu_ps_pime_hill_tree_tests.rdata")
+```
+
+```{r}
+for (i in ssu_alpha_ds_tree) {
+     tmp_obs <- get(purrr::map_chr(i, ~ paste0(., "_ht0")))
+     tmp_sha <- get(purrr::map_chr(i, ~ paste0(., "_ht1")))
+     tmp_sim <- get(purrr::map_chr(i, ~ paste0(., "_ht2")))
+     tmp_hill <- dplyr::left_join(tmp_obs, tmp_sha, by = "SamName") %>%
+       dplyr::left_join(., tmp_sim, by = "SamName") %>%
+       dplyr::rename("Observed_pt" = 2, "Shannon_exp_pt" = 3, "InvSimpson_pt" = 4)
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_hill_t"))
+     assign(tmp_name, tmp_hill)
+     rm(list = ls(pattern = "tmp_"))
+}
+objects()
+```
+
+
+```{r, echo=FALSE}
+for (i in ssu_alpha_ds_tree) {
+     tmp_ps <- get(i)
+     tmp_hill <- get(purrr::map_chr(i, ~ paste0(., "_hill_t")))
+     tmp_hill_samp <- dplyr::left_join(data.frame(sample_data(tmp_ps)),
+                                         tmp_hill, by = "SamName")
+     tmp_hill_samp$ID <- tmp_hill_samp$SamName
+     tmp_hill_samp <- tmp_hill_samp %>%  tibble::column_to_rownames("ID")
+     tmp_ps2 <- merge_phyloseq(otu_table(tmp_ps),
+                                sample_data(tmp_hill_samp),
+                                tax_table(tmp_ps),
+                                phy_tree(tmp_ps))
+     assign(i, tmp_ps2)
+     tmp_path <- file.path("files/trepo/alpha/rdata/")
+     saveRDS(tmp_ps2, paste(tmp_path, i, ".rds", sep = ""))
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+### Sample Summary
+
+Now we summarize the data for each sample against all three metrics. The table contains the results of ASV diversity estimates from the full data set and the PIME filtered data set, as well as the lineage diversity from the PIME data set.
+
+The suffix `_p` indicates metrics for the PIME data set and the suffix `_pt` indicates the lineage diversity for the PIME data set.
+
+```{r, echo=FALSE}
+ssu_pime_hill_samp <- ssu_ps_pime_merge_hill %>% dplyr::rename("Observed_p" = 2,
+                                                             "Shannon_exp_p" = 3,
+                                                             "InvSimpson_p" = 4)
+ssu_pime_hill_samp <- dplyr::left_join(ssu_pime_hill_samp, ssu_ps_pime_merge_hill_t)
+ssu_pime_hill_samp <- ssu_pime_hill_samp[,c(1:2,5,3,6,4,7)]
+
+ssu_samp_data_tab <- dplyr::left_join(data.frame(sample_data(ssu_ps_work_merge)), ssu_pime_hill_samp)
+ssu_samp_data_tab <- ssu_samp_data_tab[,c(1:7,10:11,8,12:13,9,14:15)]
+ssu_samp_data_tab <- ssu_samp_data_tab %>% dplyr::rename("sample_id" = "SamName")
+ssu_samp_data_tab <- ssu_samp_data_tab[order(ssu_samp_data_tab$sample_id), ]
+```
+
+<br/>
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+## elementId https://www.random.org/strings/
+datatable(ssu_samp_data_tab, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Sample summary table including
+            ASV diversity indices for FULL and PIME filtered data.
+            Use the buttons to navigate through the table or
+            download a copy.')),
+          elementId = "k3dzw6vcxxkzoyofwxo8",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, -1), c("5", "All"))
+            )
+          ) %>%
+    DT::formatRound(columns = c(9:15),
+                    digits = 3) %>%
+    DT::formatStyle(columns = colnames(ssu_samp_data_tab),
+                    fontSize = '80%')
+```
+
+### Normality Tests
+
+Before running significance tests, we need to know if data is normally distributed, which will tell use whether to use a parametric or non-parametric test. To test if the data are normally distributed, we use the Shapiro-Wilk Normality test and the Bartlett Test of Homogeneity of Variances.
+
+If the p-values are both **not significant** (p > 0.05) from the tests, we accept the null hypothesis (that the results are normally distributed) and test for significance between samples using an ANOVA. If the p-values are both **significant** (p < 0.05), we reject the null hypothesis (that the results are normally distributed) and test for significance between samples using Kruskal-Wallis (non-parametric equivalent of ANOVA).
+
+The commands are as follows:
+
+`shapiro.test(x)`, where `x` is a numeric vector of alpha diversity  values from the sample data table.
+
+`bartlett.test(Value ~ Group, data = df)` Where `Value` is the metric of interest, `Group` in the treatment to compare, and `df` is the data frame.  
+
+First the Shapiro-Wilk Normality test.
+
+```{r}
+ssu_div_tab <- ssu_samp_data_tab
+ssu_shap_tests <- c()
+for (i in colnames(ssu_div_tab[,7:15])) {
+   tmp_name <- purrr::map_chr(i, ~ paste0("ssu_shap_", .))
+   ssu_shap_tests <- append(ssu_shap_tests, tmp_name)
+   tmp_test <- eval(shapiro.test(ssu_div_tab[[i]]))
+   tmp_test$data.name <- tmp_name
+   assign(tmp_name, tmp_test)
+   rm(list = ls(pattern = "tmp_"))
+}
+```
+
+And then the Bartlett Test of Homogeneity of Variances.
+
+```{r}
+ssu_div_tab <- ssu_samp_data_tab
+ssu_bart_tests <- c()
+for (i in colnames(ssu_div_tab[,7:15])) {
+   tmp_name <- purrr::map_chr(i, ~ paste0("ssu_bart_", .))
+   ssu_bart_tests <- append(ssu_bart_tests, tmp_name)
+   tmp_test <- eval(bartlett.test(ssu_div_tab[[i]] ~ SITE, data = ssu_div_tab))
+   tmp_test$data.name <- tmp_name
+   assign(tmp_name, tmp_test)
+   rm(list = ls(pattern = "tmp_"))
+}
+```
+
+Here we see which Shapiro-Wilk Normality **and** Bartlett tests were significant and which were not for the FULL data set analysis?
+
+```{r, eval=TRUE}
+for (i in colnames(ssu_div_tab[,7:15])) {
+  tmp_get_shap <- get(purrr::map_chr(i, ~ paste0("ssu_shap_", .)))
+  tmp_shap_p <- round(tmp_get_shap[[2]], 4)
+  tmp_get_bart <- get(purrr::map_chr(i, ~ paste0("ssu_bart_", .)))
+  tmp_bart_p <- round(tmp_get_bart[[3]], 4)
+  tmp_res <- eval(isTRUE(tmp_get_shap[[2]] > 0.05) & isTRUE(tmp_get_bart[[3]] > 0.05))
+  tmp_print <- c(i, "Shapiro p-value =", tmp_shap_p, 
+                 "Bartlett p-value =", tmp_bart_p, 
+                 "Are both p-values > 0.05?", tmp_res)
+  cat(tmp_print,"\n")
+  rm(list = ls(pattern = "tmp_"))
+}
+```
+
+So wherever the value of both p-values in `> 0.05` we can use an ANOVA, otherwise we use Kruskal-Wallis.
+
+
+### Significance Tests
+
+To begin, we need to create a hierarchy variable; a two-column matrix specifying the relationship between samples (first column) and groups (second column).
+
+```{r}
+ssu_hill_hier <- ssu_samp_data_tab
+ssu_hill_hier <- ssu_hill_hier %>% dplyr::select("sample_id", "SITE") %>%
+  tibble::remove_rownames()
+ssu_hill_hier <- ssu_hill_hier[order(ssu_hill_hier$SITE), ]
+#ssu_hill_hier$SITE = paste(ssu_hill_hier$SITE, 'C', sep='')
+# ADD NEXT LINE TO REORDER BY SITE
+#ssu_hill_hier <- ssu_hill_hier[order(factor(ssu_hill_hier$SITE,levels=c(c("ALMR", "PAST", "CRIS", "PUCL")))),]
+ssu_hill_hier <- ssu_hill_hier %>% tibble::remove_rownames()
+saveRDS(ssu_hill_hier, "files/trepo/alpha/rdata/ssu_merge_hill_hier.rds")
+```
+
+Again, we start by testing significance of ASV diversity for the full data set against each of the three metrics using the `div_test` function.
+
+The command is as follows:
+
+`div_test(countable = x, qvalue = i, hierarchy = hier, tree = ultrametric_tree, posthoc = TRUE)`, where `x` is ASV by sample table, `i` is the q-value corresponding to the metric of interest, `hier` is the hierarchy matrix, `tree` is an ultrametric formatted phylogenetic tree (see below), and `posthoc` indicates whether to run post hoc pairwise analyses.
+
+```{r, results='hide'}
+ssu_alpha_ds_full <- c("ssu_ps_work_merge", "ssu_ps_pime_merge")
+qvalue <- c(0,1,2)
+for (i in ssu_alpha_ds_full) {
+     for (j in qvalue) {
+         tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_tu")))
+         tmp_test <- div_test(tmp_get, qvalue = j,
+                      hierarchy = ssu_hill_hier,
+                      posthoc = TRUE)
+         tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+         print(tmp_name)
+         assign(tmp_name, tmp_test)
+         rm(list = ls(pattern = "tmp_"))
+ }
+}
+objects(pattern = "_t")
+```
+
+And then test significance of lineage diversity for the PIME filtered data set only.
+
+```{r, echo=FALSE}
+###!!!!!!!!!!!!!!!!!!!!!!!!#####
+### LOAD  AFTER INITIAL ANALYSIS
+load("files/trepo/alpha/rdata/ssu_ps_pime_merge_hill_lineage_test.rdata")
+rm(ssu_ps_pime_t_q0_adt, ssu_ps_pime_t_q1_adt, ssu_ps_pime_t_q2_adt)
+objects(pattern = "_adt")
+```
+
+```{r, results='hide'}
+ssu_alpha_ds_full_tree <- c("ssu_ps_pime_merge")
+qvalue <- c(0,1,2)
+for (i in ssu_alpha_ds_full_tree) {
+     for (j in qvalue) {
+         tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_tu")))
+         tmp_tree <- get(purrr::map_chr(i, ~ paste0(., "_tree_ult")))
+         tmp_test <- div_test(tmp_get, qvalue = j,
+                      hierarchy = ssu_hill_hier,
+                      posthoc = TRUE,
+                      tree = tmp_tree)
+         tmp_name <- purrr::map_chr(i, ~ paste0(., "_t_q", j, "_adt"))
+         print(tmp_name)
+         assign(tmp_name, tmp_test)
+         rm(list = ls(pattern = "tmp_"))
+ }
+}
+save(ssu_ps_pime_merge_t_q0_adt, ssu_ps_pime_merge_t_q1_adt, ssu_ps_pime_merge_t_q2_adt, 
+     file = "files/trepo/alpha/rdata/ssu_ps_pime_merge_hill_lineage_test.rdata")
+```
+
+
+```{r, echo=FALSE}
+tmp_objects <- c("ssu_ps_work_merge", "ssu_ps_pime_merge", "ssu_ps_pime_merge_t")
+
+tmp_metric <- data.frame(c("Observed", "Shannon exponential", "Inverse Simpson"))
+tmp_qvalue <- data.frame(c("0", "1", "2"))
+
+qvalue <- c(0,1,2)
+for (i in tmp_objects) {
+
+  tmp_h_pvalue <- c()
+     for (j in qvalue) {
+          tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+          tmp_get <- get(tmp_name)$homogeneity.pvalue
+          tmp_h_pvalue <- c(append(tmp_h_pvalue, tmp_get))
+     }
+  tmp_h_pvalue <- data.frame(tmp_h_pvalue)
+
+  tmp_n_pvalue <- c()
+      for (j in qvalue) {
+          tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+          tmp_get <- get(tmp_name)$normality.pvalue
+          tmp_n_pvalue <- c(append(tmp_n_pvalue, tmp_get))
+     }
+  tmp_n_pvalue <- data.frame(tmp_n_pvalue)
+
+  tmp_method <- c()
+      for (j in qvalue) {
+          tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+          tmp_get <- get(tmp_name)$method
+          tmp_method <- c(append(tmp_method, tmp_get))
+     }
+  tmp_method <- data.frame(tmp_method)
+
+  tmp_phoc_method <- c()
+      for (j in qvalue) {
+          tmp_name <- purrr::map_chr(i, ~ paste0(., "_q", j, "_adt"))
+          tmp_get <- get(tmp_name)$posthoc.method
+          tmp_phoc_method <- c(append(tmp_phoc_method, tmp_get))
+     }
+  tmp_phoc_method <- data.frame(tmp_phoc_method)
+
+  tmp_df <- dplyr::bind_cols(tmp_metric, tmp_qvalue) %>%
+                     dplyr::bind_cols(., tmp_n_pvalue) %>%
+                     dplyr::bind_cols(., tmp_h_pvalue) %>%
+                     dplyr::bind_cols(., tmp_method) %>%
+                     dplyr::bind_cols(., tmp_phoc_method) %>%
+  dplyr::rename("metric" = 1, "q-value" = 2, "normality p-value" = 3, 
+                "homogeneity p-value" = 4, "method" = 5, "posthoc method" = 6)
+  tmp_name <- purrr::map_chr(i, ~ paste0(i, "_sig_tab"))
+  assign(tmp_name, tmp_df)
+}
+objects(pattern="_sig_tab")
+```
+
+
+
+
+```{r, echo=FALSE}
+
+## Format as follows:
+## FALSE Kruskal-Wallis Test = ssu_ps_pime_q1_adt$test[[3]]
+## TRUE Tukey post-hoc  =      ssu_ps_work_q1_adt$test[[1]][[1, 5]]
+
+tmp_pvalue <- data.frame(c(ssu_ps_work_merge_q0_adt$test[[3]],
+                           ssu_ps_work_merge_q1_adt$test[[3]],
+                           ssu_ps_work_merge_q2_adt$test[[3]]))
+ssu_ps_work_sig_tab <- dplyr::bind_cols(ssu_ps_work_merge_sig_tab, tmp_pvalue) %>%
+                         dplyr::rename("posthoc p-value" = 7)
+#####################################################################################
+tmp_pvalue <- data.frame(c(ssu_ps_pime_merge_q0_adt$test[[1]][[1, 5]],
+                           ssu_ps_pime_merge_q1_adt$test[[3]],
+                           ssu_ps_pime_merge_q2_adt$test[[3]]))
+ssu_ps_pime_sig_tab <- dplyr::bind_cols(ssu_ps_pime_merge_sig_tab, tmp_pvalue) %>%
+                         dplyr::rename("posthoc p-value" = 7)
+#####################################################################################
+tmp_pvalue <- data.frame(c(ssu_ps_pime_merge_t_q0_adt$test[[1]][[1, 5]],
+                           ssu_ps_pime_merge_t_q1_adt$test[[3]],
+                           ssu_ps_pime_merge_t_q2_adt$test[[3]]))
+ssu_ps_pime_t_sig_tab <- dplyr::bind_cols(ssu_ps_pime_merge_t_sig_tab, tmp_pvalue) %>%
+                         dplyr::rename("posthoc p-value" = 7)
+#####################################################################################
+
+rm(list = ls(pattern = "tmp_"))
+```
+
+<br/>
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+knitr::kable(ssu_ps_work_sig_tab)
+```
+*Summary of significant tests (**ASV diversity**).*
+
+<br/>
+
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+knitr::kable(ssu_ps_pime_sig_tab)
+```
+*Summary of significant tests for PIME filtered data  (**ASV diversity**).*
+
+<br/>
+
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+knitr::kable(ssu_ps_pime_t_sig_tab)
+```
+*Summary of significant tests  the PIME filtered data  (**ASV Lineage diversity**).*
+
+<br/>
+
+
+
+### PostHoc Analyses
+
+First let's check the results of each posthoc analysis.
+
+<details markdown="1">
+<summary>Detailed results of PostHoc Analyses for each metric</summary>
+
+#### Observed (q-value = 0)
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvf0_lab <- "ASV diversity FULL data set (Observed)"
+ssu_asvf0_lab
+ssu_ps_work_merge_q0_adt$posthoc.method
+data.frame(ssu_ps_work_merge_q0_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvp0_lab <- "ASV diversity PIME data set (Observed)"
+ssu_asvp0_lab
+ssu_ps_pime_merge_q0_adt$posthoc.method
+data.frame(ssu_ps_pime_merge_q0_adt$posthoc)
+```
+
+```{r eval=TRUE, echo=FALSE, results='hold', comment=''}
+ssu_asvpt0_lab <- "Lineage diversity PIME data set (Observed)"
+ssu_asvpt0_lab
+ssu_ps_pime_merge_t_q0_adt$posthoc.method
+data.frame(ssu_ps_pime_merge_t_q0_adt$posthoc)
+objects(pattern = "t_q0_ad")
+```
+
+#### Shannon exponential (q-value = 1)
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvf1_lab <- "ASV diversity FULL data set(Shannon exponential)"
+ssu_asvf1_lab
+ssu_ps_work_merge_q1_adt$posthoc.method
+data.frame(ssu_ps_work_merge_q1_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvp1_lab <- "ASV diversity PIME data set (Shannon exponential)"
+ssu_asvp1_lab
+ssu_ps_pime_merge_q1_adt$posthoc.method
+data.frame(ssu_ps_pime_merge_q1_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvpt1_lab <- "Lineage diversity PIME data set (Shannon exponential)"
+ssu_asvpt1_lab
+ssu_ps_pime_merge_t_q1_adt$posthoc.method
+data.frame(ssu_ps_pime_merge_t_q1_adt$posthoc)
+```
+
+#### Simpson multiplicative (i.e., Inverse Simpson) (q-value = 2)
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvf2_lab <- "ASV diversity FULL data set (Inverse Simpson)"
+ssu_asvf2_lab
+ssu_ps_work_merge_q2_adt$posthoc.method
+data.frame(ssu_ps_work_merge_q2_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvp2_lab <- "ASV diversity PIME data set (Inverse Simpson)"
+ssu_asvp2_lab
+ssu_ps_pime_merge_q2_adt$posthoc.method
+data.frame(ssu_ps_pime_merge_q2_adt$posthoc)
+```
+
+```{r, echo=FALSE, eval=TRUE, results='hold', comment=''}
+ssu_asvpt2_lab <- "Lineage diversity PIME data set (Inverse Simpson)"
+ssu_asvpt2_lab
+ssu_ps_pime_merge_t_q2_adt$posthoc.method
+data.frame(ssu_ps_pime_merge_t_q2_adt$posthoc)
+```
+</details>
+
+### Alpha Diversity Plots
+
+Now we can plot the results from the posthoc analyses for each metric and data set using the function `div_test_plot_jjs`. I modified the orihginal function (`div_test_plot`) to control a little of the formatting.
+
+The command is as follows:
+
+`div_test_plot(divtest = x, chart = "type", colour = col.pal, posthoc = TRUE, threshold = value))`, where `x` is the results from the `div_test` function, `"type"` is chart type (box, jitter, or violin),`colour` is is a color palette, `posthoc` indicates whether to run posthoc pairwise analyses, and `value` is the maximum p-value to show in pairwise posthoc results. **WARNING** if none of the posthoc results are below the specified threshold, the function will throw an error. Therefore, until this is fixed, all posthoc values are shown.
+
+```{r}
+source("hack_code/div_test_plot_jjs.R")
+rm(list=ls(pattern="_adt_plot"))
+for (i in objects(pattern="_adt")) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_plot"))
+     tmp_get <- get(i)
+     tmp_get$data <- tmp_get$data[order(factor(tmp_get$data$Group,
+                                levels=c(c("ALMR", "PAST", "CRIS", "PUCL")))),]
+     tmp_get$data <- tmp_get$data %>% tibble::remove_rownames()
+     tmp_df <- div_test_plot_jjs(tmp_get, chart = "box",
+                                 colour	= swel_col, posthoc = TRUE)
+     tmp_df <- ggpar(tmp_df, legend = "none")
+     print(tmp_name)
+     assign(tmp_name, tmp_df)
+     rm(list = ls(pattern = "tmp_"))
+}
+objects(pattern = "_adt")
+```
+
+```{r, echo=FALSE, eval=FALSE}
+ssu_ps_work_q0_adt_plot <- ssu_ps_work_merge_q0_adt_plot +
+                             theme(axis.title.x = element_blank()) +
+                             ggtitle(ssu_asvf0_lab)
+ssu_ps_pime_q0_adt_plot <- ssu_ps_pime_merge_q0_adt_plot +
+                             theme(axis.title.y = element_blank(),
+                             axis.title.x = element_blank()) +
+                             ggtitle(ssu_asvp0_lab)
+ssu_ps_pime_t_q0_adt_plot <- ssu_ps_pime_merge_t_q0_adt_plot +
+                               theme(axis.title.y = element_blank(),
+                               axis.title.x = element_blank()) +
+                               ggtitle(ssu_asvpt0_lab)
+
+ssu_ps_work_q1_adt_plot <- ssu_ps_work_merge_q1_adt_plot +
+                             theme(axis.title.x = element_blank()) +
+                             ggtitle(ssu_asvf1_lab)
+ssu_ps_pime_q1_adt_plot <- ssu_ps_pime_merge_q1_adt_plot +
+                             theme(axis.title.y = element_blank(),
+                             axis.title.x = element_blank()) +
+                             ggtitle(ssu_asvp1_lab)
+ssu_ps_pime_t_q1_adt_plot <- ssu_ps_pime_merge_t_q1_adt_plot +
+                               theme(axis.title.y = element_blank(),
+                               axis.title.x = element_blank()) +
+                               ggtitle(ssu_asvpt1_lab)
+
+ssu_ps_work_q2_adt_plot <- ssu_ps_work_merge_q2_adt_plot +
+                             ggtitle(ssu_asvf2_lab)
+ssu_ps_pime_q2_adt_plot <- ssu_ps_pime_merge_q2_adt_plot +
+                             theme(axis.title.y = element_blank()) +
+                             ggtitle(ssu_asvp2_lab)
+ssu_ps_pime_t_q2_adt_plot <- ssu_ps_pime_merge_t_q2_adt_plot +
+                               theme(axis.title.y = element_blank()) +
+                               ggtitle(ssu_asvpt2_lab)
+
+ssu_alph_div_plots_asv <- ggarrange(
+  ssu_ps_work_q0_adt_plot, ssu_ps_pime_q0_adt_plot, ssu_ps_pime_t_q0_adt_plot,
+  ssu_ps_work_q1_adt_plot, ssu_ps_pime_q1_adt_plot, ssu_ps_pime_t_q1_adt_plot,
+  ssu_ps_work_q2_adt_plot, ssu_ps_pime_q2_adt_plot, ssu_ps_pime_t_q2_adt_plot,
+  ncol=3, nrow = 3)
+
+ssu_alph_div_plots_asv
+dev.off()
+png("files/trepo/alpha/figures/ssu_merge_alph_div_plots_asv.png",
+    height=32, width=40, units = 'cm', res = 600, bg = "white")
+ssu_alph_div_plots_asv
+dev.off()
+pdf("files/trepo/alpha/figures/ssu_merge_alph_div_plots_asv.pdf",
+    height = 10, width = 12)
+ssu_alph_div_plots_asv
+dev.off()
+```
+
+
+<br/>
+
+Posthoc adjusted p-values given for each pairwise comparison.
+
+```{r, echo=FALSE, warning=FALSE, fig.height=5, layout='l-page', eval=TRUE, fig.cap='**Top row** = Observed; **middle row** = Shannon exponential; **bottom row** = Inverse Simpson. **Left** = ASV diversity full data set; **middle** = ASV diversity PIME data set; **right** = Lineage diversity PIME data set.'}
+system("cp files/trepo/alpha/figures/ssu_merge_alph_div_plots_asv.png include/trepo/alpha/ssu_merge_alph_div_plots_asv.png")
+knitr::include_graphics("include/trepo/alpha/ssu_merge_alph_div_plots_asv.png")
+```
+
+```{r, echo=FALSE}
+rm(ssu_ps_work_merge, ssu_ps_pime_merge, ssu_amp_data, ssu_ps_pime_merge_norm, ssu_ps_work_merge_norm)
+save.image("page_build/trepo/alpha_ssu_alpha_merge_wf_part1.rdata")
+```
+
+
+## Alpha Diversity by Site
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #2
+remove(list = ls())
+load("page_build/trepo/alpha_ssu_alpha_merge_wf_part2.rdata")
+objects()
+```
+
+
+```{r, include=FALSE}
+## Initial Load for  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+## ASV FULL AND PIME
+ssu_ps_work_merge <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work_merge.rds")
+ssu_ps_pime_merge <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime.rds")
+ssu_ps_pime_merge_ALMR <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime_ALMR.rds")
+ssu_ps_pime_merge_CRIS <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime_CRIS.rds")
+ssu_ps_pime_merge_PAST <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime_PAST.rds")
+ssu_ps_pime_merge_PUCL <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime_PUCL.rds")
+```
+
+Next, we calculate alpha diversity for each site using `alpha_div()` function, which computes a single alpha diversity value for a **group of samples**. So we need to create/use data frames containing samples split by group. If a tree object is provided, the computed alpha diversity is based on lineage diversity. We will run the analysis on the FULL and PIME data sets, both with and without trees.
+
+The command is as follows:
+
+`alpha_div(countable = x, qvalue = j, tree = ultrametric_tree)`, where `x` is a count table , `j` is the q-value corresponding to the metric of interest, and `tree` is an ultrametric formatted phylogenetic tree.
+
+### Full data set split by site
+
+We will start by splitting the full data set by treatment then generating new trees and ASV tables for each split.
+
+```{r}
+site <- c("ALMR","PAST","CRIS", "PUCL")
+for (i in site) {
+     tmp_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_merge_", .))
+     tmp_ps <- subset_samples(ssu_ps_work_merge, SITE == i)
+     tmp_ps <-  prune_taxa(taxa_sums(tmp_ps) > 0, tmp_ps)
+     tmp_ps@phy_tree <- NULL
+     tmp_ps_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE,
+                            tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_ps_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     tmp_asv <- purrr::map_chr(tmp_name, ~ paste0(., "_tu"))
+     tmp_get <- get(tmp_name)
+     tmp_get_asv <- t(otu_table(tmp_get))
+     print(tmp_asv)
+     assign(tmp_asv, tmp_get_asv)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, echo=FALSE}
+saveRDS(ssu_ps_work_merge_ALMR, "files/trepo/alpha/rdata/ssu_ps_work_merge_ALMR.rds")
+saveRDS(ssu_ps_work_merge_PAST, "files/trepo/alpha/rdata/ssu_ps_work_merge_PAST.rds")
+saveRDS(ssu_ps_work_merge_CRIS, "files/trepo/alpha/rdata/ssu_ps_work_merge_CRIS.rds")
+saveRDS(ssu_ps_work_merge_PUCL, "files/trepo/alpha/rdata/ssu_ps_work_merge_PUCL.rds")
+```
+
+As mentioned above, any tree used in the `hilldv` package must be **ultrametric**. So we need to convert the trees in order to look at lineage diversity. We will also save copies of each tree since this process takes a while to run.
+
+```{r}
+site <- c("ALMR","PAST","CRIS", "PUCL")
+for (i in site) {
+     tmp_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_merge_", .))
+     tmp_name_tr <- purrr::map_chr(tmp_name, ~ paste0(., "_tree_ult"))
+     tmp_get_name <- get(tmp_name)
+     tmp_ult_tree <- force.ultrametric(tmp_get_name@phy_tree, method=c("extend"))
+     print(tmp_name_tr)
+     assign(tmp_name_tr, tmp_ult_tree)
+     save_name <- purrr::map_chr(tmp_name_tr, ~ paste0("files/trepo/alpha/rdata/", ., ".rds"))
+     tree <- get(tmp_name_tr)
+     saveRDS(tree, save_name)
+     rm(list = ls(pattern = "tmp_"))
+     rm(save_name)
+}
+```
+
+```{r}
+qvalue <- c(0,1,2)
+for (i in site) {
+  for (j in qvalue){
+     tmp_asv_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_merge_", ., "_tu"))
+     tmp_asv_name <- get(tmp_asv_name)
+     tmp_div_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_merge_", ., "_aldiv_", j))
+     print(tmp_div_name)
+     tmp_alpha_div <- alpha_div(countable = tmp_asv_name, qvalue = j)
+     assign(tmp_div_name, tmp_alpha_div)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r}
+qvalue <- c(0,1,2)
+for (i in site) {
+  for (j in qvalue){
+     tmp_asv_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_merge_", ., "_tu"))
+     tmp_asv_name <- get(tmp_asv_name)
+     tmp_tree_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_merge_", ., "_tree_ult"))
+     tmp_tree_name <- get(tmp_tree_name)
+     tmp_div_name <- purrr::map_chr(i, ~ paste0("ssu_ps_work_merge_", ., "_aldiv_", j, "t"))
+     print(tmp_div_name)
+     tmp_alpha_div <- alpha_div(countable = tmp_asv_name, qvalue = j, tree = tmp_tree_name)
+     assign(tmp_div_name, tmp_alpha_div)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+### PIME filtered data set
+
+For this step, we will use the PIME data set. We start by making new trees and ASV tables for each split.
+
+
+```{r}
+for (i in site) {
+     tmp_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_merge_", .))
+     tmp_ps <- get(tmp_name)
+     tmp_ps@phy_tree <- NULL
+     tmp_ps_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE,
+                            tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_ps_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     tmp_asv_name <- purrr::map_chr(tmp_name, ~ paste0(., "_tu"))
+     tmp_get <- get(tmp_name)
+     tmp_asv_tab <- t(otu_table(tmp_get))
+     print(tmp_asv_name)
+     assign(tmp_asv_name, tmp_asv_tab)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+
+```{r}
+for (i in site) {
+     tmp_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_merge_", .))
+     tmp_tr_name <- purrr::map_chr(tmp_name, ~ paste0(., "_tree_ult"))
+     tmp_get_name <- get(tmp_name)
+     ultra_tree <- force.ultrametric(tmp_get_name@phy_tree, method=c("extend"))
+     print(tmp_tr_name)
+     assign(tmp_tr_name, ultra_tree)
+     tmp_save_name <- purrr::map_chr(tmp_tr_name, ~ paste0("files/trepo/alpha/rdata/", ., ".rds"))
+     tmp_tree <- get(tmp_tr_name)
+     saveRDS(tmp_tree, tmp_save_name)
+     rm(list = ls(pattern = "tmp_"))
+     rm(ultra_tree)
+}
+```
+
+
+```{r}
+qvalue <- c(0,1,2)
+for (i in site) {
+  for (j in qvalue){
+     tmp_asv_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_merge_", ., "_tu"))
+     tmp_asv_name <- get(tmp_asv_name)
+     tmp_spl_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_merge_", ., "_tree_ult"))
+     tmp_spl_name <- get(tmp_spl_name)
+     tmp_div_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_merge_", ., "_aldiv_", j))
+     print(tmp_div_name)
+     tmp_alpha_div <- alpha_div(countable = tmp_asv_name, qvalue = j)
+     assign(tmp_div_name, tmp_alpha_div)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r}
+qvalue <- c(0,1,2)
+for (i in site) {
+  for (j in qvalue){
+     tmp_asv_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_merge_", ., "_tu"))
+     tmp_asv_name <- get(tmp_asv_name)
+     tmp_spl_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_merge_", ., "_tree_ult"))
+     tmp_spl_name <- get(tmp_spl_name)
+     tmp_div_name <- purrr::map_chr(i, ~ paste0("ssu_ps_pime_merge_", ., "_aldiv_", j, "t"))
+     print(tmp_div_name)
+     tmp_alpha_div <- alpha_div(countable = tmp_asv_name, qvalue = j, tree = tmp_spl_name)
+     assign(tmp_div_name, tmp_alpha_div)
+     rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r, echo=FALSE}
+tmp_alpha_metric <- data.frame(t(c("Observed (q = 0)",
+                                   "Shannon exponential (q = 1)",
+                                   "Inverse Simpson (q = 2)")))
+####################################
+tmp_data_set_df <- objects(pattern="[A-Z]+_aldiv_0")
+tmp_data_set_df <- tmp_data_set_df %>%
+  stringr::str_replace_all(c("ssu_ps_pime_merge_[A-Z]+_aldiv_0.?" = "pime",
+                             "ssu_ps_work_merge_[A-Z]+_aldiv_0.?" = "full"))
+tmp_data_set_df <- data.frame(c(tmp_data_set_df))
+####################################
+tmp_temp_df <- objects(pattern="[A-Z]+_aldiv_0")
+tmp_temp_df <- tmp_temp_df %>%
+  stringr::str_replace_all(c("ssu_ps_[a-z]{4}_merge_" = "",
+                             "_aldiv_0.?" = ""))
+tmp_temp_df <- data.frame(c(tmp_temp_df))
+####################################
+tmp_type_df <- objects(pattern="[A-Z]+_aldiv_0")
+tmp_type_df <- tmp_type_df %>%
+  stringr::str_replace_all(c("ssu_ps_[a-z]{4}_merge_[A-Z]+_aldiv_0$" = "asv",
+                             "ssu_ps_[a-z]{4}_merge_[A-Z]+_aldiv_0t" = "lineage"))
+tmp_type_df <- data.frame(c(tmp_type_df))
+####################################
+tmp_observed_df <- c()
+for (i in objects(pattern="[A-Z]+_aldiv_0")) {
+   tmp_get <- get(i)
+   tmp_observed_df <- c(append(tmp_observed_df, tmp_get))
+   rm(tmp_get)
+}
+tmp_observed_df <- data.frame(tmp_observed_df)
+
+tmp_shannon_df <- c()
+for (i in objects(pattern="[A-Z]+_aldiv_1")) {
+   tmp_get <- get(i)
+   tmp_shannon_df <- c(append(tmp_shannon_df, tmp_get))
+   rm(tmp_get)
+}
+tmp_shannon_df <- data.frame(tmp_shannon_df)
+
+tmp_simpson_df <- c()
+for (i in objects(pattern="[A-Z]+_aldiv_2")) {
+   tmp_get <- get(i)
+   tmp_simpson_df <- c(append(tmp_simpson_df, tmp_get))
+   rm(tmp_get)
+}
+tmp_simpson_df <- data.frame(tmp_simpson_df)
+####################################
+tab_alpha_div <- dplyr::bind_cols(tmp_data_set_df, tmp_temp_df) %>%
+                     dplyr::bind_cols(., tmp_type_df) %>%
+                     dplyr::bind_cols(., tmp_observed_df) %>%
+                     dplyr::bind_cols(., tmp_shannon_df) %>%
+                     dplyr::bind_cols(., tmp_simpson_df) %>%
+  dplyr::rename("data set" = 1,
+                "site" = 2,
+                "type" = 3,
+                "Observed (q = 0)" = 4,
+                "Shannon exponential (q = 1)" = 5,
+                "Inverse Simpson (q = 2)" = 6)
+ssu_merge_tab_alpha_div <- tab_alpha_div[with(tab_alpha_div, order(`data set`, type, site)), ]
+rm(list = ls(pattern = "tmp_"))
+rm(tab_alpha_div)
+```
+
+<br/>
+
+
+
+
+
+
+
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+knitr::kable(ssu_merge_tab_alpha_div, row.names = FALSE)
+```
+*Alpha diversity for sample groups from the full and PIME filtered data.*
+<br/>
+
+```{r, echo=FALSE, layout="l-page", eval=FALSE}
+## elementId https://www.random.org/strings/
+datatable(ssu_merge_tab_alpha_div, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Alpha diversity for sample groups
+            from the full and PIME filtered data.
+            Use the buttons to navigate through the table or
+            download a copy.')),
+          elementId = "ak3s70it7lg9sfyoulr7",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, -1), c("5", "All"))
+            )
+          ) %>%
+    DT::formatRound(columns = c(4:6),
+                    digits = 3) %>%
+    DT::formatStyle(columns = colnames(ssu_merge_tab_alpha_div),
+                    fontSize = '80%')
+```
+
+```{r, echo=FALSE}
+rm(ssu_ps_work_merge, ssu_ps_pime_merge)
+rm(list = ls(pattern = "_ALMR$"))
+rm(list = ls(pattern = "_CRIS$"))
+rm(list = ls(pattern = "_PAST$"))
+rm(list = ls(pattern = "_PUCL$"))
+save.image("page_build/trepo/alpha_ssu_alpha_merge_wf_part2.rdata")
+```
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #2
+remove(list = ls())
+```
+
+
+##  Source Code {.appendix}
+
+The source code for this page can be accessed on GitHub by [clicking this link](https://github.com/tropical-repo/web/blob/master/trepo-alpha.Rmd). Please note, that in order to process the data *and*  build the website, we needed to run the workflow and get the results. Then hard code the results and turn off the individual commands. So the raw file for this page is a bit messy---you have been warned.

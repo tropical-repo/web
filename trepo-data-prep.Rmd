@@ -1,0 +1,1161 @@
+---
+title: "2 Data Set Preparation"
+description: |
+  Workflow for preparation  of the **16S rRNA** data set. These steps are needed before analyzing the data. In this workflow, sample groups are defined, and phyloseq objects are created and curated.
+author:
+#  - name: Jarrod J Scott
+#    url: https://example.com/norajones
+#    affiliation: Spacely Sprockets
+#    affiliation_url: https://example.com/spacelysprokets
+bibliography: assets/cite.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+set.seed(119)
+#library(conflicted)
+library(phyloseq); packageVersion("phyloseq")
+library(DT)
+library(ggplot2)
+library(Biostrings); packageVersion("Biostrings")
+library(dplyr)
+library(microbiome)
+library(tidyverse)
+library(taxa)
+library(metacoder)
+library(gdata)
+library(ampvis2)
+library(gdata)
+library(ape)
+
+options(scipen=999)
+knitr::opts_current$get(c(
+  "cache",
+  "cache.path",
+  "cache.rebuild",
+  "dependson",
+  "autodep"
+))
+```
+
+
+> Hit the *Hide Code* button to collapse the R code (visible by default).
+
+<aside>
+```{r, echo=FALSE, results='asis', eval=TRUE}
+codefolder::generic(init = "show", query = "pre.sourceCode",
+  style = "position: absolute; right: 14%; z-index: 200")
+```
+</aside>
+
+These workflows share many common variable names so you must split the workflow into a script for each data set OR run the command `remove(list = ls())` before beginning the next workflow.
+
+# 16s rRNA Data
+
+```{r, include=FALSE, eval=TRUE}	
+## ONLY FOR PAGE BUILD	
+remove(list = ls())	
+load("page_build/trepo/data_prep_ssu_wf.rdata")	
+## READ IN all phyloseq objects	
+ps <- readRDS("files/trepo/data-prep/rdata/ssu_ps.rds")	
+ps_no_mito <- readRDS("files/trepo/data-prep/rdata/ssu_ps_no_mito.rds")	
+ps_no_euk <- readRDS("files/trepo/data-prep/rdata/ssu_ps_no_euk.rds")	
+ps_filt <- readRDS("files/trepo/data-prep/rdata/ssu_ps_filt.rds")	
+ps_work_o <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work_o.rds")	
+ps_work <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work.rds")	
+ps_work_merge <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work_merge.rds")	
+ps_no_chloro <- readRDS("files/trepo/data-prep/rdata/ssu_ps_no_chloro.rds")	
+ps_filt_no_low <- readRDS("files/trepo/data-prep/rdata/ssu_ps_filt_no_low.rds")	
+## AND ampvis	
+amp_data <- readRDS("files/trepo/data-prep/rdata/ssu_amp_data.rds")	
+amp_merge_data <- readRDS("files/trepo/data-prep/rdata/ssu_amp_merge_data.rds")	
+ps_work_amp <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work_amp.rds")	
+amp_data <- readRDS("files/trepo/data-prep/rdata/ssu_amp_data.rds")	
+```	
+
+
+## Prerequisites
+
+In order to run this workflow, you either need to run the corresponding [DADA2 Workflow for the 16S rRNA](trepo-dada2.html#s-rrna-data) or begin with the output from that workflow, `data_prep_ssu_wf.rdata`. See the [Data Availability](data-availability.html) page for complete details.
+
+Unless otherwise noted, we primarily use [phyloseq](https://joey711.github.io/phyloseq/)  [@mcmurdie2013phyloseq] in this section of the workflow to prepare the 2018 16S rRNA data set for community analyses. We prepare the data set by curating samples, removing contaminants, and creating phyloseq objects.
+
+## Sample Summary
+
+Before we begin, let's create a summary table containing some basic sample metadata and the read count data from the [DADA2 workflow](dada2-trepo.html#s-rrna-data.html). We need to inspect how total reads changed through the workflow. While we are at it, let's create more intuitive Sample IDs. For more details on how reads changed at each step of the workflow, see the [summary table](dada2-trepo.html#track-reads-through-workflow) at the end of the DADA2 section. Table headers are as follows:
+
+| Header                    | Description                                                                              |
+|---------------------------|------------------------------------------------------------------------------------------|
+| `Sample_ID`               | The new sample ID based on Site, Week, Region, Season, & Replicate number.               |
+| `FastqID`                 | Base name of the fastq file                                                              |
+| `Site`                    | Sampling site                                                                            |
+| `Date`                    | Sampling date                                                                            |
+| `Region`                  | Sampling region                                                                          |
+| `Season`                  | Sampling season                                                                          |
+| `Week`                    | Sampling week                                                                            |
+| `Replicate`               | Replicate number                                                                         |
+| `Set`                     | Extraction set                                                                           |
+| `Extraction`              | Unique extrcation ID                                                                     |
+| `raw`                     | Initial read count                                                |
+| `nochim`                  | Final read count after removing chimeras                                                 |
+| `perc_remain`             | Percent of reads remaining from `input` to `nonchim`                                     |
+
+<br/>
+
+```{r, echo=FALSE}
+sam_tab <- read.table("files/trepo/dada2/tables/ssu_sample_seq_info.txt",
+                      header = TRUE, sep = "\t")
+read_tab <- read.table("files/trepo/dada2/tables/ssu_read_changes.txt",
+                      header = TRUE,  sep = "\t")
+names(read_tab)[1] <- "dada2Id"
+joined_tab <- left_join(sam_tab, read_tab, by = c("dada2Id" = "dada2Id"))
+tmp_tab <- joined_tab
+tmp_tab$New_ID <- base::paste(tmp_tab$site_shortcode,
+                                   tmp_tab$Week, sep = "_")
+tmp_tab$New_ID <- base::paste(tmp_tab$New_ID,
+                                   tmp_tab$REGION, sep = "_")
+tmp_tab$New_ID <- base::paste(tmp_tab$New_ID,
+                                   tmp_tab$SEASON, sep = "_")
+tmp_tab$New_ID <- base::paste(tmp_tab$New_ID,
+                                    tmp_tab$Replicate, sep = "_")
+#tmp_tab[duplicated(tmp_tab[,c('New_ID')]),]
+tmp_tab <- tmp_tab %>% tibble::column_to_rownames("New_ID")
+tmp_tab <- tmp_tab %>% tibble::rownames_to_column("Sample_ID")
+joined_tab <- tmp_tab
+joined_tab[, c(3:4, 15:19)] <- NULL
+joined_tab <- joined_tab %>% dplyr::rename("FastqID" = 2)
+```
+
+```{r, echo=FALSE, layout="l-page", eval=TRUE}
+## NOTE. For some reason this datatable was being given the same
+## elementId as the first table. So I had to add a 20 character
+## elementId https://www.random.org/strings/
+datatable(joined_tab, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Sample  summary table including
+            read changes at start and end of DADA2 workflow. Use the buttons to
+            navigate through the table or download a copy.')),
+          elementId = "cto95grs6c7lg4h1sjxx",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(joined_tab), fontSize = '80%')
+```
+
+<br/>
+
+We can also plot the final read count by the *Year* the sample were taken.
+
+```{r, echo=FALSE}
+wong_pal <- c("#D55E00", "#56B4E9", "#009E73", "#0072B2",
+              "#F0E442", "#CC79A7",  "#E69F00", "#7F7F7F",
+              "#000000")
+```
+
+```{r, echo=FALSE, fig.height=2.5, layout="l-body-outset", fig.cap="Final read count by temperature & treatment. Each point represents a differnt plot. Note the Negative control is not included."}
+tmp_temp <- as.character(joined_tab$Site)
+tmp_p <- ggplot(joined_tab, aes(x = tmp_temp, y = nochim,
+                              color = tmp_temp)) +
+  geom_point(size = 3) + scale_colour_manual(values = wong_pal)
+tmp_p <- tmp_p + labs(x = "Temp (C)", y = "Final Read Count")
+tmp_p
+ggsave("include/trepo/data-prep/ssu_samp_summary_plot.png", tmp_p, width = 7, height = 3)
+```
+
+```{r, echo=FALSE, layout="l-body-outset", warning=FALSE, fig.height=2.5, eval=TRUE}
+knitr::include_graphics("include/trepo/data-prep/ssu_samp_summary_plot.png")
+```
+<small>Final read count by temperature treatment. Each point represents a different sample.</small>
+
+## Defining Groups
+
+1. Load the data packet produced in the final step of the DADA2 workflow. This packet (`ssu_dada2_wf.rdata`) contains the ASV-by-sample table and the ASV taxonomy table.
+
+2. Rename the samples so names have plot and Depth info.
+
+3. After we load the data packet, we next need to format sample names and define groups.
+
+```{r}
+#tmp_tab <- joined_tab[order(joined_tab$FastqID), ]
+#load("files/trepo/dada2/rdata/ssu_dada2_wf.rdata")
+seqtab <- readRDS("files/trepo/dada2/rdata/seqtab.nochim_pseudo_pooled.rds")
+tax_silva <- readRDS("files/trepo/dada2/rdata/tax_silva_pseudo_pooled.rds")
+identical(joined_tab$FastqID, rownames(seqtab))
+tmp_new_names <- joined_tab$Sample_ID
+rownames(seqtab) <- tmp_new_names
+
+samples.out <- rownames(seqtab)
+
+sample_name <- substr(samples.out, 1, 999)
+site <- substr(samples.out, 0, 4)
+week <- substr(samples.out, 6, 8)
+region <- substr(samples.out, 10, 11)
+season <- substr(samples.out, 13, 14)
+replicate <- substr(samples.out, 16, 17)
+```
+
+Here is a breakdown of the samples based on the new name: 
+
+- **`r length(unique(sample_name))`** samples.   
+- **`r length(unique(site))`** sites   
+- **`r length(unique(week))`** weeks  
+- **`r length(unique(region))`** regions.  
+- **`r length(unique(season))`** seasons.  
+
+<br/>
+
+We can also take a look at the number of samples per metadata category. 
+
+```{r, echo=FALSE}
+tmp_year <- data.frame(table(joined_tab$Site))
+tmp_year$type <- "Site"
+tmp_site <- data.frame(table(joined_tab$REGION))
+tmp_site$type <- "REGION"
+tmp_trans <- data.frame(table(joined_tab$SEASON))
+tmp_trans$type <- "SEASON"
+tmp_loc <- data.frame(table(joined_tab$Week))
+tmp_loc$type <- "Week"
+
+md_summary <- rbind(tmp_year, tmp_loc, tmp_site, tmp_trans)
+rm(list = ls(pattern = "tmp_"))
+md_summary <- md_summary[,c(3,1,2)]
+md_summary <- md_summary %>% dplyr::rename("variable" = 2) %>% 
+                             dplyr::rename(., "category" = 1) %>% 
+                             dplyr::rename(., "count" = 3)
+```
+
+```{r, eval=TRUE, echo=FALSE}
+datatable(md_summary, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Number of samples per metadata variable.')),
+          elementId = "cqvf5a9qkufgfv9m6gsp",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(md_summary), fontSize = '80%')
+```
+
+<br/>
+
+4. And finally we define a sample data frame that holds the different groups we extracted from the sample names.
+
+```{r}
+#define a sample data frame
+samdf <- data.frame(SamName = sample_name,
+                    SITE = site,
+                    WEEK = week,
+                    REGION = region,
+                    SEASON = season,
+                    REP = replicate)
+rownames(samdf) <- samples.out
+```
+
+## Create a Phyloseq Object
+
+**A**. The first step is to rename the amplicon sequence variants (ASVs) so the designations are a bit more user friendly. By default, DADA2 names each ASV by its unique sequence so that data can be directly compared across studies (which is great). But this convention can get cumbersome downstream, so we rename the ASVs using a simpler convention---ASV1, ASV2, ASV3, and so on.
+
+<aside>
+A phyloseq object contains ASV table (taxa abundances), sample metadata, and taxonomy table (mapping between ASVs and higher-level taxonomic classifications).
+</aside>
+
+```{r}
+# this create the phyloseq object
+ps <- phyloseq(otu_table(seqtab, taxa_are_rows = FALSE),
+                   sample_data(samdf), tax_table(tax_silva))
+tax_table(ps) <- cbind(tax_table(ps),
+                           rownames(tax_table(ps)))
+
+# adding unique ASV names
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+tax_table(ps) <- cbind(tax_table(ps),
+                           rownames(tax_table(ps)))
+```
+
+
+```{r echo=FALSE, eval=TRUE}
+head(taxa_names(ps))
+```
+
+So the complete data set contains `r ntaxa(ps)` ASVs. We can also use the [microbiome R package](https://github.com/microbiome/microbiome/)  [@lahti2017microbiome] to get some additional summary data from the phyloseq object.
+
+```{r, echo=FALSE}
+min_read_ps <- min(readcount(ps))
+max_read_ps <- max(readcount(ps))
+total_reads_ps <- sum(readcount(ps))
+mean_reads_ps <- round(mean(readcount(ps)), digits = 0)
+median_reads_ps <- median(readcount(ps))
+total_asvs_ps <- ntaxa(ps)
+singleton_ps <- tryCatch(ntaxa(rare(ps, detection = 1, prevalence = 0)), error=function(err) NA)
+singleton_ps_perc <- tryCatch(round((100*(ntaxa(rare(ps, detection = 1, prevalence = 0)) /
+                                   ntaxa(ps))), digits = 3), error=function(err) NA)
+sparsity_ps <- round(length(which(abundances(ps) == 0))/length(abundances(ps)),
+                     digits = 3)
+```
+
+| Metric                              | Results                                              |
+|-------------------------------------|------------------------------------------------------|
+| Min. number of reads                | `r min_read_ps`                                      |
+| Max. number of reads                | `r max_read_ps`                                      |
+| Total number of reads               | `r total_reads_ps`                                   |
+| Average number of reads             | `r mean_reads_ps`                                    |
+| Median number of reads              | `r median_reads_ps`                                  |
+| Sparsity                            | `r sparsity_ps`                                      |
+| Any ASVs sum to 1 or less?          | `r isTRUE(singleton_ps >= 1)`                        |
+| Number of singleton ASVs            | `r singleton_ps`                                     |
+| Percent of ASVs that are singletons | `r singleton_ps_perc`                                |
+| Number of sample variables are:     | `r length(sample_data(ps))`    (`r colnames(samdf)`) |
+**B**. Add two final columns containing the ASV sequences and ASV IDs. This will be useful later when trying to export a fasta file. We can also take a look at the phyloseq object.
+
+```{r}
+colnames(tax_table(ps)) <- c("Kingdom", "Phylum", "Class", "Order",
+    "Family", "Genus", "ASV_SEQ", "ASV_ID")
+ps
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ps
+```
+
+**C**. Export sequence and taxonomy tables for the unadulterated phyloseq object for later use. We will use the prefix `full` to indicate that these are the *raw* outputs.
+
+```{r}
+write.table(tax_table(ps),
+            "files/trepo/data-prep/tables/ssu_full_tax_table.txt",
+            sep="\t", quote = FALSE, col.names=NA)
+write.table(t(otu_table(ps)),
+            "files/trepo/data-prep/tables/ssu_full_seq_table.txt",
+            sep="\t", quote = FALSE, col.names=NA)
+
+saveRDS(ps, "files/trepo/data-prep/rdata/ssu_ps.rds")	
+```
+
+## Remove Contaminants & Unwanted Taxa
+
+Let's see if we have any potential contaminants. We can use some [inline R code](https://rmarkdown.rstudio.com/lesson-4.html) to see the taxonomy table for any taxa of interest.
+
+<aside>
+The code (hidden by default) is written as `` `r
+"Chloroplast" %in% tax_table(ps)` ``.
+</aside>
+
+- Are Mitochondria present? `r "Mitochondria" %in% tax_table(ps)`
+- Are Chloroplast present? `r "Chloroplast" %in% tax_table(ps)`
+- Are Eukaryota present? `r "Eukaryota" %in% tax_table(ps)`
+
+```{r, echo=FALSE}
+"Mitochondria" %in% tax_table(ps)
+"Chloroplast" %in% tax_table(ps)
+"Eukaryota" %in% tax_table(ps)
+```
+
+Let's remove these taxa---Eukaryota because we used bacterial/archaeal primers, Mitochondria because those are likely from  eukaryotes, and Chloroplast because those are likely from plants. We must do each of these in turn using phyloseq and it gets a little messy.
+
+Why messy? The `subset_taxa` command removes anything that is `NA` for the specified taxonomic level or above. For example, lets say you run the `subset_taxa` command using `Family != "Mitochondria`". Seems like you should get a phyloseq object with everything except Mitochondria. But actually the command not only gets rid of Mitochondria but everything else that has `NA` for Family and above. In my experience this is not well documented and I had to dig through the files to figure out what was happening.
+
+Anyway, to remove the taxa we do the following:
+
+* Subset the taxa and generate a `ps` object of just the taxa of interest,
+* Select the ASV column only, turn it into a factor, and use this to remove <INSERT TAXA> from the `ps` object.
+
+### Remove  Mitochondria ASVs
+
+Remember the original data set contained `r ntaxa(ps)` ASVs. Here we generate a file with mitochondria ASVs only.
+
+```{r}
+tmp_MT1 <- subset_taxa(ps, Family == "Mitochondria")
+tmp_MT1 <-  as(tax_table(tmp_MT1), "matrix")
+tmp_MT1 <- tmp_MT1[, 8]
+tmp_MT1df <- as.factor(tmp_MT1)
+goodTaxa <- setdiff(taxa_names(ps), tmp_MT1df)
+ps_no_mito <- prune_taxa(goodTaxa, ps)
+ps_no_mito
+saveRDS(ps_no_mito, "files/trepo/data-prep/rdata/ssu_ps_no_mito.rds")	
+```
+
+```{r echo=FALSE, eval=TRUE}
+ps_no_mito
+```
+
+Looks like this removed **`r ntaxa(ps) - ntaxa(ps_no_mito)` Mitochondria ASVs**. We will duplicate the code block to remove other groups.
+
+### Remove Chloroplast ASVs
+
+And again with Chloroplast ASVs only.
+
+```{r}
+tmp_CH1 <- subset_taxa(ps_no_mito, Order == "Chloroplast")
+tmp_CH1 <-  as(tax_table(tmp_CH1), "matrix")
+tmp_CH1 <- tmp_CH1[, 8]
+tmp_CH1df <- as.factor(tmp_CH1)
+goodTaxa <- setdiff(taxa_names(ps_no_mito), tmp_CH1df)
+ps_no_chloro <- prune_taxa(goodTaxa, ps_no_mito)
+ps_no_chloro
+saveRDS(ps_no_chloro, "files/trepo/data-prep/rdata/ssu_ps_no_chloro.rds")	
+```
+
+```{r echo=FALSE, eval=TRUE}
+ps_no_chloro
+```
+
+The code removed an additional **`r ntaxa(ps_no_mito) - ntaxa(ps_no_chloro)` Chloroplast ASVs**.
+
+### Remove Eukaryota ASVs
+
+And again with Eukaryota ASVs only.
+
+```{r}
+tmp_EU1 <- subset_taxa(ps_no_chloro, Kingdom == "Eukaryota")
+tmp_EU1 <-  as(tax_table(tmp_EU1), "matrix")
+tmp_EU1 <- tmp_EU1[, 8]
+tmp_EU1df <- as.factor(tmp_EU1)
+goodTaxa <- setdiff(taxa_names(ps_no_chloro), tmp_EU1df)
+ps_no_euk <- prune_taxa(goodTaxa, ps_no_chloro)
+ps_no_euk
+saveRDS(ps_no_euk, "files/trepo/data-prep/rdata/ssu_ps_no_euk.rds")	
+```
+
+```{r echo=FALSE, eval=TRUE}
+ps_no_euk
+```
+
+The code removed an additional **`r ntaxa(ps_no_chloro) - ntaxa(ps_no_euk)` Eukaryota ASVs** from the `ps` object.
+
+### Remove any Kingdom NAs
+
+Here we can just use the straight up `subset_taxa` command since we do not need to worry about any ranks above Kingdom also being removed.
+
+```{r}
+ps_filt <- subset_taxa(ps_no_euk, !is.na(Kingdom))
+saveRDS(ps_filt, "files/trepo/data-prep/rdata/ssu_ps_filt.rds")	
+```
+
+## Remove Low-Count Samples
+
+Next, we can remove samples with really low read counts, say less than 500 reads.
+
+```{r, eval=TRUE, echo=FALSE}
+tmp_data <- data.frame(sample_sums(ps_filt))
+dplyr::filter(tmp_data, tmp_data[1] < 2000)
+```
+
+```{r}
+ps_filt_no_low <- prune_samples(sample_sums(ps_filt) > 2000, ps_filt)
+```
+
+
+We lost `r nsamples(ps) - nsamples(ps_filt_no_low)` sample(s). After removing samples we need to check whether any ASVs ended up with no reads.
+
+```{r}
+no_reads <- taxa_sums(ps_filt_no_low) == 0
+```
+
+And we lost `r sum(no_reads)` ASV(s). So now we must remove these from the ps object.
+
+```{r}
+ps_filt_no_low <- prune_taxa(taxa_sums(ps_filt_no_low) > 0, ps_filt_no_low)
+saveRDS(ps_filt_no_low, "files/trepo/data-prep/rdata/ssu_ps_filt_no_low.rds")
+```
+
+```{r, eval=TRUE}
+ps_filt_no_low
+```
+
+
+```{r}
+ps_work_o <- ps_filt_no_low
+tmp_ps_work <- ps_filt_no_low
+```
+
+The code eliminated an additional **`r ntaxa(ps_no_euk) - ntaxa(ps_filt)` Kingdom level NA ASVs** from the phyloseq object.
+
+## Rename *NA* taxonomic ranks
+
+Phyloseq has an odd way of dealing with taxonomic ranks that have no value---in other words,  *NA* in the tax table. The first thing we are going to do before moving forward is to change all of the *NA*s to have a value of the next highest classified rank. For example, `ASV26` is not classified at the Genus level but is at Family level (Xanthobacteraceae). So we change the Genus name to *Family_Xanthobacteraceae*. The code for comes from these two posts on the phyloseq GitHub, both by [MSMortensen](https://github.com/MSMortensen): issue [#850](https://github.com/joey711/phyloseq/issues/850#issuecomment-394771087) and issue [#990](https://github.com/joey711/phyloseq/issues/990#issuecomment-424618425).
+
+> One thing this code does is reassign the functions `class` and `order` to taxonomic ranks. This can cause issues if you need these functions.
+
+So you need to run something like this `rm(class, order, phylum, kingdom)` at the end of the code to remove these as variables. For now, I have not come up with a better solution.
+
+```{r}
+tax.clean <- data.frame(tax_table(tmp_ps_work))
+for (i in 1:6){ tax.clean[,i] <- as.character(tax.clean[,i])}
+tax.clean[is.na(tax.clean)] <- ""
+
+for (i in 1:nrow(tax.clean)){
+    if (tax.clean[i,2] == ""){
+        kingdom <- base::paste("k_", tax.clean[i,1], sep = "")
+        tax.clean[i, 2:6] <- kingdom
+    } else if (tax.clean[i,3] == ""){
+        phylum <- base::paste("p_", tax.clean[i,2], sep = "")
+        tax.clean[i, 3:6] <- phylum
+    } else if (tax.clean[i,4] == ""){
+        class <- base::paste("c_", tax.clean[i,3], sep = "")
+        tax.clean[i, 4:6] <- class
+    } else if (tax.clean[i,5] == ""){
+        order <- base::paste("o_", tax.clean[i,4], sep = "")
+        tax.clean[i, 5:6] <- order
+    } else if (tax.clean[i,6] == ""){
+        tax.clean$Genus[i] <- base::paste("f",tax.clean$Family[i], sep = "_")
+        }
+}
+tax_table(tmp_ps_work) <- as.matrix(tax.clean)
+rank_names(tmp_ps_work)
+rm(class, order, phylum, kingdom, tax.clean)	
+```
+
+Still the same ranks. That's good. What about the new groups? Let's take a peak at some families.
+
+```{r, eval=TRUE, echo=FALSE}
+head(get_taxa_unique(ps_work, "Family"), 16)
+```
+
+Nice. Bye-bye *NA*
+
+> *Note*. The original code mentioned above is written for data sets that have species-level designations.
+
+Since this data set does not contain species, I modified the code to stop at the genus level. If your data set has species, my modifications will not work for you.
+
+Finally, we rename the ps object. This is now our working data set.
+
+```{r}
+ps_work <- tmp_ps_work
+rm(tmp_ps_work)	
+```
+
+## Merge Technical Replicates
+
+At this point we can create a `ps` object containing samples merged by replicates. Since we do this after removing low-read count samples, these two objects should contain the same number of reads.
+
+```{r}
+tmp_ps_work <- ps_work
+sample_data(tmp_ps_work)$MERGE_ID <- base::paste(sample_data(tmp_ps_work)$SITE,
+                                             sample_data(tmp_ps_work)$WEEK, 
+                                             sep = "_")
+sample_data(tmp_ps_work)$MERGE_ID <- base::paste(sample_data(tmp_ps_work)$MERGE_ID,
+                                             sample_data(tmp_ps_work)$REGION, 
+                                             sep = "_")
+sample_data(tmp_ps_work)$MERGE_ID <- base::paste(sample_data(tmp_ps_work)$MERGE_ID,
+                                             sample_data(tmp_ps_work)$SEASON, 
+                                             sep = "_")
+
+sample_data(tmp_ps_work)$REP <- NULL
+sample_data(tmp_ps_work)$SamName <- NULL
+tmp_sd <- data.frame(sample_data(tmp_ps_work))
+
+tmp_unique <- unique(tmp_sd)
+tmp_unique <- tmp_unique %>% dplyr::rename("SamName" = "MERGE_ID")
+tmp_ps_merge <- merge_samples(tmp_ps_work, "MERGE_ID")
+sample_data(tmp_ps_merge)$SamName <- row.names(sample_data(tmp_ps_merge)) 
+sample_data(tmp_ps_merge)[,1:5] <- NULL
+tmp_sd_o <- data.frame(sample_data(tmp_ps_merge))
+
+tmp_ps_merge_sd <- dplyr::left_join(tmp_sd_o, tmp_unique)
+tmp_ps_merge_sd$ROWID <- tmp_ps_merge_sd$SamName 
+tmp_ps_merge_sd <- tmp_ps_merge_sd %>% tibble::column_to_rownames("ROWID")
+
+sample_data(tmp_ps_merge) <- tmp_ps_merge_sd
+ps_work_merge <- tmp_ps_merge
+rm(tmp_ps_work)	
+rm(tmp_ps_merge)	
+```
+
+```{r, eval=TRUE, echo=FALSE}
+ps_work_merge
+print("Read count, all samples:") 
+sum(readcount(ps_work))
+print("Read count, merged samples:") 
+sum(readcount(ps_work_merge))
+```
+
+## Add Phylogenetic Tree
+
+One final task is to add a phylogenetic tree to the phyloseq object.
+
+```{r}
+ps_work_tree <- rtree(ntaxa(ps_work), rooted = TRUE,
+                      tip.label = taxa_names(ps_work))
+ps_work <- merge_phyloseq(ps_work,
+                          sample_data,
+                          ps_work_tree)
+
+ps_work_merge_tree <- rtree(ntaxa(ps_work_merge), rooted = TRUE,
+                      tip.label = taxa_names(ps_work_merge))
+ps_work_merge <- merge_phyloseq(ps_work_merge,
+                          sample_data,
+                          ps_work_merge_tree)
+
+ps_work_o_tree <- rtree(ntaxa(ps_work_o), rooted = TRUE,
+                      tip.label = taxa_names(ps_work_o))
+ps_work_o <- merge_phyloseq(ps_work_o,
+                          sample_data,
+                          ps_work_o_tree)
+saveRDS(ps_work, "files/trepo/data-prep/rdata/ssu_ps_work.rds")	
+saveRDS(ps_work_merge, "files/trepo/data-prep/rdata/ssu_ps_work_merge.rds")
+saveRDS(ps_work_o, "files/trepo/data-prep/rdata/ssu_ps_work_o.rds")	
+```
+
+Later in the workflow, we will generate an ampvis2 object from the working phyloseq object, but first we need to fix the OTU table from the phyloseq object. For some reason, values in otu table are `int` but need to be `dbl` or else ampvis2 will not work properly.
+
+
+```{r}
+ps_list <- c("ps_work", "ps_work_merge")
+for (i in ps_list) {
+       tmp_get <- get(i)
+       tmp_otu <- data.frame(t(otu_table(tmp_get)))	
+       tmp_otu[] <- lapply(tmp_otu, as.numeric)	
+       tmp_otu <- as.matrix(tmp_otu)	
+       tmp_tax <- as.matrix(data.frame(tax_table(tmp_get)))
+       tmp_samples <- data.frame(sample_data(tmp_get))
+       tmp_amp <- merge_phyloseq(otu_table(tmp_otu, taxa_are_rows = TRUE),	
+                          tax_table(tmp_tax),	
+                          sample_data(tmp_samples))	
+       tmp_name <- purrr::map_chr(i, ~ paste0(., "_amp"))
+       assign(tmp_name, tmp_amp)
+       rm(list = ls(pattern = "tmp_"))
+}
+
+saveRDS(ps_work_amp, "files/trepo/data-prep/rdata/ssu_ps_work_amp.rds")
+saveRDS(ps_work_merge_amp, "files/trepo/data-prep/rdata/ssu_ps_work_merge_amp.rds")
+```
+
+## Sample Summary
+
+Now that we have removed the NC and sample with zero reads, we can summarize the data set so far. Let's start with the in our working phyloseq object using the `summarize_phyloseq` from the [microbiome R package](https://github.com/microbiome/microbiome/) [@lahti2017microbiome] as we did above.
+
+### Full Data Set
+
+```{r, echo=FALSE}
+min_read_ps_work <- min(readcount(ps_work))
+max_read_ps_work <- max(readcount(ps_work))
+total_reads_ps_work <- sum(readcount(ps_work))
+mean_reads_ps_work <- round(mean(readcount(ps_work)), digits = 0)
+median_reads_ps_work <- median(readcount(ps_work))
+total_asvs_ps_work <- ntaxa(ps_work)
+singleton_ps_work <- tryCatch(ntaxa(rare(ps_work,
+                                         detection = 1,
+                                         prevalence = 0)),
+                              error=function(err) NA)
+singleton_ps_work_perc <- tryCatch(round((100*(ntaxa(rare(
+  ps_work, detection = 1, prevalence = 0)) / ntaxa(ps_work))), digits = 3),
+  error=function(err) NA)
+sparsity_ps_work <- round(length(which(
+  abundances(ps_work) == 0))/length(abundances(ps)), digits = 3)
+```
+
+| Metric                              | Results                                                   |
+|-------------------------------------|-----------------------------------------------------------|
+| Min. number of reads                | `r min_read_ps_work`                                      |
+| Max. number of reads                | `r max_read_ps_work`                                      |
+| Total number of reads               | `r total_reads_ps_work`                                   |
+| Average number of reads             | `r mean_reads_ps_work`                                    |
+| Median number of reads              | `r median_reads_ps_work`                                  |
+| Sparsity                            | `r sparsity_ps_work`                                      |
+| Any ASVs sum to 1 or less?          | `r isTRUE(singleton_ps_work >= 1)`                        |
+| Number of singleton ASVs            | `r singleton_ps_work`                                     |
+| Percent of ASVs that are singletons | `r singleton_ps_work_perc`                                |
+| Number of sample variables are:     | `r length(sample_data(ps_work))`    (`r colnames(samdf)`) |
+
+
+We can also generate a summary table of total reads & ASVs for each sample. You can sort the table, download a copy, or filter by search term. Here is the code to generate the data for the table. First, we create data frames that hold total reads and ASVs for each sample.
+
+```{r}
+tmp_total_reads <- sample_sums(ps_work)
+tmp_total_reads <- as.data.frame(tmp_total_reads, make.names = TRUE)
+tmp_total_reads <- tmp_total_reads %>% rownames_to_column("Sample_ID")
+
+tmp_total_asvs <- estimate_richness(ps_work,
+                                measures = "Observed")
+tmp_total_asvs <- tmp_total_asvs %>% rownames_to_column("Sample_ID")
+tmp_total_asvs$Sample_ID <- gsub('\\.', '-', tmp_total_asvs$Sample_ID)
+```
+
+And then we merge these two data frames with the sample data frame.
+
+```{r}
+sam_details <- data.frame(sample_data(ps_work))
+rownames(sam_details) <- NULL
+colnames(sam_details) <- c("Sample_ID", "SITE", "WEEK",
+                                  "REGION", "SEASON", "REP")
+joined_percent <- joined_tab
+joined_percent[, c(2:11)] <- NULL
+merge_tab <- dplyr::left_join(sam_details, tmp_total_reads) %>%
+                left_join(., joined_percent)
+
+percent_change2 <- 100*(1-(merge_tab$tmp_total_reads/merge_tab$nochim)) %>%
+  round(digits = 5)
+merge_tab$Change <- as.numeric(sprintf("%.3f", percent_change2))
+merge_tab2 <- dplyr::left_join(merge_tab, tmp_total_asvs, by = "Sample_ID")
+merge_tab2$coverage = cut(merge_tab2$tmp_total_reads,
+                          c(0, 5000, 25000, 100000, 200000),
+                          labels = c(
+                            "low (< 5k)", "medium (5-25k)",
+                            "high (25-100k)", "extra_high (> 100k)"))
+merge_tab2[, c(8:10)] <- NULL
+colnames(merge_tab2) <- c("Sample_ID", "SITE", "WEEK",
+                          "REGION", "SEASON", "REP",
+                          "final_reads", "reads_lost", "total_asvs", "coverage")
+rm(list = ls(pattern = "tmp_"))
+```
+
+<br/>
+
+```{r, layout="l-body-outset", echo=FALSE, eval=TRUE}
+datatable(merge_tab2, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Total reads & ASVs by sample.')),
+          elementId = "ox3mmtpb1lneo5h1zk7a",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+    formatRound(columns=c("reads_lost"), digits = 4) %>%
+  formatStyle(columns = colnames(merge_tab2), fontSize = '80%')
+```
+
+### Merged Data Set
+
+```{r, echo=FALSE}
+min_read_ps_work_merge <- min(readcount(ps_work_merge))
+max_read_ps_work_merge <- max(readcount(ps_work_merge))
+total_reads_ps_work_merge <- sum(readcount(ps_work_merge))
+mean_reads_ps_work_merge <- round(mean(readcount(ps_work_merge)), digits = 0)
+median_reads_ps_work_merge <- median(readcount(ps_work_merge))
+total_asvs_ps_work_merge <- ntaxa(ps_work_merge)
+singleton_ps_work_merge <- tryCatch(ntaxa(rare(ps_work_merge,
+                                         detection = 1,
+                                         prevalence = 0)),
+                              error=function(err) NA)
+singleton_ps_work_merge_perc <- tryCatch(round((100*(ntaxa(rare(
+  ps_work_merge, detection = 1, prevalence = 0)) / ntaxa(ps_work_merge))), digits = 3),
+  error=function(err) NA)
+sparsity_ps_work_merge <- round(length(which(
+  abundances(ps_work_merge) == 0))/length(abundances(ps)), digits = 3)
+```
+
+| Metric                              | Results                                                   |
+|-------------------------------------|-----------------------------------------------------------|
+| Min. number of reads                | `r min_read_ps_work_merge`                                      |
+| Max. number of reads                | `r max_read_ps_work_merge`                                      |
+| Total number of reads               | `r total_reads_ps_work_merge`                                   |
+| Average number of reads             | `r mean_reads_ps_work_merge`                                    |
+| Median number of reads              | `r median_reads_ps_work_merge`                                  |
+| Sparsity                            | `r sparsity_ps_work_merge`                                      |
+| Any ASVs sum to 1 or less?          | `r isTRUE(singleton_ps_work_merge >= 1)`                        |
+| Number of singleton ASVs            | `r singleton_ps_work_merge`                                     |
+| Percent of ASVs that are singletons | `r singleton_ps_work_merge_perc`                                |
+| Number of sample variables are:     | `r length(sample_data(ps_work_merge))`    (`r colnames(samdf)`) |
+
+
+```{r, echo=FALSE}
+tmp_total_reads <- sample_sums(ps_work_merge)
+tmp_total_reads <- as.data.frame(tmp_total_reads, make.names = TRUE)
+tmp_total_reads <- tmp_total_reads %>% rownames_to_column("Sample_ID")
+
+tmp_total_asvs <- estimate_richness(ps_work_merge,
+                                measures = "Observed")
+tmp_total_asvs <- tmp_total_asvs %>% rownames_to_column("Sample_ID")
+tmp_total_asvs$Sample_ID <- gsub('\\.', '-', tmp_total_asvs$Sample_ID)
+```
+
+
+```{r, echo=FALSE}
+sam_details_m <- data.frame(sample_data(ps_work_merge))
+rownames(sam_details_m) <- NULL
+colnames(sam_details_m) <- c("Sample_ID", "SITE", "WEEK",
+                                  "REGION", "SEASON")
+
+merge_tab_m <- dplyr::left_join(sam_details_m, tmp_total_reads) %>%
+                left_join(., tmp_total_asvs)
+
+merge_tab_m$coverage = cut(merge_tab_m$tmp_total_reads,
+                          c(0, 5000, 25000, 100000, 200000),
+                          labels = c(
+                            "low (< 5k)", "medium (5-25k)",
+                            "high (25-100k)", "extra_high (> 100k)"))
+colnames(merge_tab_m) <- c("Sample_ID", "SITE", "WEEK",
+                          "REGION", "SEASON",
+                          "final_reads", "total_asvs", "coverage")
+
+```
+
+<br/>
+
+```{r, layout="l-body-outset", echo=FALSE, eval=TRUE}
+datatable(merge_tab_m, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Total reads & ASVs by sample.')),
+          elementId = "dz3mntsb1aneo2hsqk4a",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  formatStyle(columns = colnames(merge_tab_m), fontSize = '80%')
+rm(list = ls(pattern = "tmp_"))
+
+```
+
+<br/>
+
+## Taxmap Object
+
+We have phyloseq objects but we also want to make `taxmap` objects so we can use the [metacoder](https://github.com/grunwaldlab/metacoder) [@foster2017metacoder] and [taxa](https://github.com/ropensci/taxa) packages. We will jump back and forth between between different tools and packages because each has functionality not available in the others. That said, each package also requires a specially formatted *object* to work with.
+
+Confused? I was too until I realized that a phyloseq object contains only three type of tables: an `otu_table`, a `sample_data`, and a `tax_table`^[it can also contain a `phy_tree` table but we will not use that here]. So any time you want to manipulate your data---say look at relative ASV abundance---you need a *new* phyloseq object. A taxmap object on the other hand can contain many different types of data tables, and as such, is generally more flexible.
+
+### Data Prep
+
+First, we can take a look at the phyloseq object generated during the previous workflow.
+
+```{r, eval=TRUE}
+ps_work
+```
+
+In order to use the taxa package, we need to have our data in a specific format. Metacoder has a command called `parse_phyloseq`, which should do the work for us, but I was unable to get this to work for our phyloseq object. Instead, we generate the necessary tables directly from the phyloseq object and then create a basic taxmap object. I apologize for the circuitous route, but at least it is relatively simple. We need the **a**) taxonomy table, **b**) ASV table, and **c**) sample metadata table. We will first create the tables and then save a local copy.
+
+#### Taxonomy table
+
+```{r}	
+tmp_tax_tab <- as.data.frame(tax_table(ps_work))	
+tmp_tax_tab <- tibble::rownames_to_column(tmp_tax_tab, "asv_id")	
+tmp_tax_tab$ASV_SEQ <- NULL	
+colnames(tmp_tax_tab)[colnames(tmp_tax_tab) == "ASV_ID"] <- "ASV"	
+write.table(tmp_tax_tab, "files/trepo/data-prep/tables/ssu_tax_tab_mc.txt",	
+            quote = FALSE, sep = "\t", row.names = FALSE)	
+```	
+
+#### ASV table	
+
+```{r}	
+tmp_asv_tab <- as.data.frame(otu_table(ps_work))	
+# this orders in decending fashion	
+tmp_asv_tab <- tmp_asv_tab[ statnet.common::order(row.names(tmp_asv_tab)), ]	
+tmp_asv_tab <- as.data.frame(t(tmp_asv_tab))	
+tmp_asv_tab <- tibble::rownames_to_column(tmp_asv_tab, "asv_id")	
+write.table(tmp_asv_tab, "files/trepo/data-prep/tables/ssu_asv_tab_mc.txt",	
+            quote = FALSE, sep = "\t", row.names = FALSE)	
+```	
+
+#### Sample table	
+
+```{r}	
+tmp_sam_tab <- merge_tab2	
+tmp_sam_tab[,8] <- NULL	
+tmp_sam_tab <- tmp_sam_tab %>% dplyr::rename("total_reads" = "final_reads")	
+# this orders in decending fashion	
+tmp_sam_tab <- tmp_sam_tab[statnet.common::order(tmp_sam_tab$Sample_ID), ]	
+write.table(tmp_sam_tab, "files/trepo/data-prep/tables/ssu_sam_tab_mc.txt",	
+            quote = FALSE, sep = "\t", row.names = FALSE)	
+```
+
+### Create the Taxmap Object
+
+Now that we have a local copy of each table (`tax_tab`, `asv_tab`, & `sam_tab`), we can read those tables back in using the [readr](https://readr.tidyverse.org/articles/readr.html) package. Why are we doing it this way instead of just setting each table to a variable? Great question. We do it this way because `readr` returns tibbles instead of data frames. Metacoder/taxa works best when the data is in tibble format. Instead of writing and reading the tables, you could use the command `tibble()`, which would convert the data frame to a tibble.
+
+```{r}
+tmp_asv_data_i <- read_tsv("files/trepo/data-prep/tables/ssu_asv_tab_mc.txt")	
+str(tmp_asv_data_i)	
+tmp_tax_data <- read_tsv("files/trepo/data-prep/tables/ssu_tax_tab_mc.txt")	
+str(tmp_tax_data)	
+samp_data <- read_tsv("files/trepo/data-prep/tables/ssu_sam_tab_mc.txt",	
+                      col_types = "ccccccddc")	
+str(samp_data)	
+tmp_asv_data <- left_join(tmp_asv_data_i, tmp_tax_data,	
+                      by = c("asv_id" = "asv_id"))	
+str(tmp_asv_data)	
+write_csv(tmp_asv_data, "files/trepo/data-prep/tables/ssu_asv_tax_tab.csv")	
+write_csv(samp_data, "files/trepo/data-prep/tables/ssu_sam_tab_mc.csv")
+```
+
+With all the data in hand that we need, time to create a taxmap object.
+
+```{r}
+obj <- parse_tax_data(tmp_asv_data,
+                      class_cols = 306:312,
+                      named_by_rank = TRUE,
+                      include_tax_data = TRUE) # makes `taxon_ranks()` work
+names(obj$data) <- "asv_counts"
+```
+
+## Ampvis2 Object
+
+The last task is to create an [ampvis2](https://madsalbertsen.github.io/ampvis2/index.html) object so we can use the ampvis2 [@kasper2018ampvis2] R package for some of the [analyses and visualizations](https://madsalbertsen.github.io/ampvis2/reference/index.html). An ampvis2 object is similar in structure to a phyloseq object except that you need to provide a combined ASV/taxonomy table. To create the object, we use the modified phyloseq objects, `ps_work_amp` and `ps_work_merge_amp`
+
+### Create Dataframes
+
+Start by generating and modifying dataframes from the tables in the phyloseq object. Ampvis2 requires the column header "OTU" instead of "ASV" or any other name.
+
+#### Sample metadata
+
+```{r}
+tmp_amp_meta_1 <- tmp_sam_tab
+```
+
+#### ASV data
+
+```{r}
+tmp_amp_asv  <- data.frame(otu_table(ps_work_amp))	
+tmp_amp_asv <- tmp_amp_asv %>% tibble::rownames_to_column("OTU")
+```
+
+#### Taxonomy data
+
+```{r}
+tmp_amp_tax  <- data.frame(tax_table(ps_work_amp))	
+tmp_amp_tax <- tmp_amp_tax %>% tibble::rownames_to_column("OTU")	
+tmp_amp_tax$ASV_SEQ <- NULL	
+colnames(tmp_amp_tax)[colnames(tmp_amp_tax) == "ASV_ID"] <- "Species"
+```
+
+#### Merge ASV & taxonomy tables
+
+Here, rows must be OTUs (ASVs) and the last 7 columns must be taxonomic lineage.
+
+```{r}
+tmp_amp_asv_tax <- left_join(tmp_amp_asv, tmp_amp_tax, by = "OTU")
+```
+
+### Create the ampvis2 object
+
+```{r}
+amp_data <- amp_load(tmp_amp_asv_tax, metadata = tmp_amp_meta_1, tree = ps_work_tree)	
+saveRDS(amp_data, "files/trepo/data-prep/rdata/ssu_amp_data.rds")
+rm(list = ls(pattern = "tmp_"))
+```
+
+You can now access the different parts of the ampvis2 object using `amp_data$abund` for the ASV table, `amp_data$tax` for the taxonomy table, and `amp_data$metadata` for the sample data.
+
+
+```{r, echo=FALSE}
+## MERGED PS
+ps_work_merge
+#### Taxonomy table
+tmp_tax_tab <- as.data.frame(tax_table(ps_work_merge))	
+tmp_tax_tab <- tibble::rownames_to_column(tmp_tax_tab, "asv_id")	
+tmp_tax_tab$ASV_SEQ <- NULL	
+colnames(tmp_tax_tab)[colnames(tmp_tax_tab) == "ASV_ID"] <- "ASV"	
+write.table(tmp_tax_tab, "files/trepo/data-prep/tables/ssu_tax_merge_tab_mc.txt",	
+            quote = FALSE, sep = "\t", row.names = FALSE)	
+#### ASV table	
+tmp_asv_tab <- as.data.frame(otu_table(ps_work_merge))	
+# this orders in decending fashion	
+tmp_asv_tab <- tmp_asv_tab[ statnet.common::order(row.names(tmp_asv_tab)), ]	
+tmp_asv_tab <- as.data.frame(t(tmp_asv_tab))	
+tmp_asv_tab <- tibble::rownames_to_column(tmp_asv_tab, "asv_id")	
+write.table(tmp_asv_tab, "files/trepo/data-prep/tables/ssu_asv_merge_tab_mc.txt",	
+            quote = FALSE, sep = "\t", row.names = FALSE)	
+#### Sample table	
+tmp_sam_tab <- merge_tab_m	
+tmp_sam_tab <- tmp_sam_tab %>% dplyr::rename("total_reads" = "final_reads")	
+# this orders in decending fashion	
+tmp_sam_tab <- tmp_sam_tab[statnet.common::order(tmp_sam_tab$Sample_ID), ]	
+write.table(tmp_sam_tab, "files/trepo/data-prep/tables/ssu_sam_merge_tab_mc.txt",	
+            quote = FALSE, sep = "\t", row.names = FALSE)	
+### Create the Taxmap Object
+tmp_asv_data_i <- read_tsv("files/trepo/data-prep/tables/ssu_asv_merge_tab_mc.txt")	
+str(tmp_asv_data_i)	
+tmp_tax_data <- read_tsv("files/trepo/data-prep/tables/ssu_tax_merge_tab_mc.txt")	
+str(tmp_tax_data)	
+samp_data <- read_tsv("files/trepo/data-prep/tables/ssu_sam_merge_tab_mc.txt",	
+                      col_types = "cccccddc")	
+str(samp_data)	
+tmp_asv_data <- left_join(tmp_asv_data_i, tmp_tax_data,	
+                      by = c("asv_id" = "asv_id"))	
+str(tmp_asv_data)	
+write_csv(tmp_asv_data, "files/trepo/data-prep/tables/ssu_asv_merge_tax_tab.csv")	
+write_csv(samp_data, "files/trepo/data-prep/tables/ssu_sam_merge_tab_mc.csv")
+
+obj_merge <- parse_tax_data(tmp_asv_data,
+                      class_cols = 106:112,
+                      named_by_rank = TRUE,
+                      include_tax_data = TRUE) # makes `taxon_ranks()` work
+names(obj_merge$data) <- "asv_counts"
+```
+
+
+```{r, echo=FALSE}
+## Ampvis2 Object
+### Create Dataframes
+#### Sample metadata
+tmp_amp_meta_1 <- tmp_sam_tab
+#### ASV data
+tmp_amp_asv  <- data.frame(otu_table(ps_work_merge_amp))	
+tmp_amp_asv <- tmp_amp_asv %>% tibble::rownames_to_column("OTU")
+#### Taxonomy data
+tmp_amp_tax  <- data.frame(tax_table(ps_work_merge_amp))	
+tmp_amp_tax <- tmp_amp_tax %>% tibble::rownames_to_column("OTU")	
+tmp_amp_tax$ASV_SEQ <- NULL	
+colnames(tmp_amp_tax)[colnames(tmp_amp_tax) == "ASV_ID"] <- "Species"
+#### Merge ASV & taxonomy tables
+tmp_amp_asv_tax <- left_join(tmp_amp_asv, tmp_amp_tax, by = "OTU")
+### Create the ampvis2 object
+amp_data <- amp_load(tmp_amp_asv_tax, metadata = tmp_amp_meta_1, tree = ps_work_merge_tree)	
+saveRDS(amp_data, "files/trepo/data-prep/rdata/ssu_amp_merge_data.rds")
+rm(list = ls(pattern = "tmp_"))
+```
+
+
+## Review
+
+We have a few different options to play with. At this point it is difficult to say which we will use or whether additional objects need to be created. Here is a summary of the objects we have.
+
+The phyloseq object *before* changing NA ranks.
+
+```{r, eval=TRUE}
+ps_work_o
+head(get_taxa_unique(ps_work_o, "Family"), 16)
+```
+
+The phyloseq object *after* changing NA ranks.
+
+```{r, eval=TRUE}
+ps_work
+head(get_taxa_unique(ps_work, "Family"), 16)
+```
+
+The merged phyloseq object *after* changing NA ranks.
+
+```{r, eval=TRUE}
+ps_work_merge
+head(get_taxa_unique(ps_work_merge, "Family"), 16)
+```
+
+The taxmap objects.
+
+```{r, eval=TRUE}
+load("files/trepo/data-prep/rdata/ssu_taxmap.rdata")
+print(obj)
+```
+
+
+```{r, eval=TRUE}
+load("files/trepo/data-prep/rdata/ssu_merge_taxmap.rdata")
+print(obj_merge)
+```
+
+
+The ampvis2 object.
+
+```{r, eval=TRUE}
+amp_data
+amp_merge_data
+```
+
+## Final Steps
+
+The last thing tasks to complete are to **a**) save copies of the taxonomy and sequence tables and **b**) save an image of the workflow for the next section.
+
+```{r}
+write.table(tax_table(ps_work),
+            "files/trepo/data-prep/tables/ssu_work_tax_table.txt",
+            sep="\t", quote = FALSE, col.names=NA)
+write.table(t(otu_table(ps_work)),
+            "files/trepo/data-prep/tables/ssu_work_seq_table.txt",
+            sep="\t", quote = FALSE, col.names=NA)
+
+write.table(tax_table(ps_work_merge),
+            "files/trepo/data-prep/tables/ssu_work_merge_tax_table.txt",
+            sep="\t", quote = FALSE, col.names=NA)
+write.table(t(otu_table(ps_work_merge)),
+            "files/trepo/data-prep/tables/ssu_work_merge_seq_table.txt",
+            sep="\t", quote = FALSE, col.names=NA)
+
+```
+
+
+```{r, echo=FALSE}	
+## REMOVE unwanted objects	
+rm(list = ls(pattern = "^ps_"))	
+rm(amp_data)	
+rm(ps)	
+rm(list = c("tax_silva", "sam_tab"))	
+rm(list = ls(pattern = "tmp_"))	
+objects()	
+```	
+
+```{r, echo=FALSE}	
+# PAGE BUILD	
+save(obj, file = "files/trepo/data-prep/rdata/ssu_taxmap.rdata")	
+save(obj_merge, file = "files/trepo/data-prep/rdata/ssu_merge_taxmap.rdata")	
+rm(obj)	
+rm(obj_merge)	
+#saveRDS(samp_data, "files/trepo/data-prep/rdata/ssu_samp_data.rds")	
+save.image("page_build/trepo/data_prep_ssu_wf.rdata")	
+#gdata::keep(obj, samp_data, sure = TRUE)	
+#save.image("files/trepo/data-prep/rdata/ssu_taxmap.rdata")	
+```	
+
+```{r, echo=FALSE, eval=TRUE}	
+system("cp files/trepo/data-prep/tables/ssu_full_seq_table.txt include/trepo/data-prep/ssu_full_seq_table.txt")	
+system("cp files/trepo/data-prep/tables/ssu_full_tax_table.txt include/trepo/data-prep/ssu_full_tax_table.txt")	
+system("cp files/trepo/data-prep/tables/ssu_work_seq_table.txt include/trepo/data-prep/ssu_work_seq_table.txt")	
+system("cp files/trepo/data-prep/tables/ssu_work_tax_table.txt include/trepo/data-prep/ssu_work_tax_table.txt")	
+system("cp files/trepo/data-prep/tables/ssu_work_merge_seq_table.txt include/trepo/data-prep/ssu_work_merge_seq_table.txt")	
+system("cp files/trepo/data-prep/tables/ssu_work_merge_tax_table.txt include/trepo/data-prep/ssu_work_merge_tax_table.txt")	
+```	
+
+```{r include=FALSE, eval=TRUE}	
+remove(list = ls())	
+```
+
+
+
+
+
+That's all for this part!
+
+
+## Data Availability {.appendix}
+
+If you are interested in performing your own analysis, you can find copies of relevant data tables here. *Please note these are the raw data, i.e., non-rarefied or normalized in any way.*
+
+**Full data set**: Before removing contaminants & unwanted taxa. 
+
+- *ASV table* <a href="include/trepo/data-prep/ssu_full_seq_table.txt" download="ssu_full_seq_table.txt"> Download the complete ASV by sample table here.</a> This table contains ASV counts for each sample.
+
+- *Taxonomy table*<a href="include/trepo/data-prep/ssu_full_tax_table.txt" download="ssu_full_tax_table.txt"> Download the complete classification file here.</a> This table includes the full lineage plus the sequence of each ASV.
+
+**Trimmed data set**: After removing contaminants & unwanted taxa. 
+
+- *ASV table* <a href="include/trepo/data-prep/ssu_work_seq_table.txt" download="ssu_work_seq_table.txt"> Download the complete ASV by sample table here.</a> This table contains ASV counts for each sample.
+
+- *Taxonomy table*<a href="include/trepo/data-prep/ssu_work_tax_table.txt" download="ssu_work_tax_table.txt"> Download the complete classification file here.</a> This table includes the full lineage plus the sequence of each ASV.
+
+**Merged, trimmed data set**: After removing contaminants, unwanted taxa, and then merging technical replicates. 
+
+- *ASV table* <a href="include/trepo/data-prep/ssu_work_merge_seq_table.txt" download="ssu_work_merge_seq_table.txt"> Download the complete ASV by sample table here.</a> This table contains ASV counts for each sample.
+
+- *Taxonomy table*<a href="include/trepo/data-prep/ssu_work_merge_tax_table.txt" download="ssu_work_merge_tax_table.txt"> Download the complete classification file here.</a> This table includes the full lineage plus the sequence of each ASV.
+
+##  Source Code {.appendix}
+
+You can find the source code for this page by [clicking this link](https://github.com/tropical-repo/web/blob/master/trepo-data-prep.Rmd).
+
+## Data Availability {.appendix}
+
+Raw fastq files available on figshare at XXXXXXXX. Trimmed fastq files (primers removed) available through the ENA under project accession number [XXXXXXXX](). Output files from this workflow available on figshare at [XXXXXXXX.]().

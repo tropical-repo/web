@@ -1,0 +1,2125 @@
+---
+title: "4 Prevalence Interval for Microbiome Evaluation (PIME)"
+description: |
+  Reproducible workflow to filter ASVs & OTUs by prevalence intervals. In this workflow, we first rarefy the data, then split by predictor variable, calculate the best prevalence, and estimate the error in prediction. We end by saving objects for downstream analysis.
+author:
+#  - name: Jarrod J Scott
+#    url: https://example.com/norajones
+#    affiliation: Spacely Sprockets
+#    affiliation_nrl: https://example.com/spacelysprokets
+bibliography: assets/cite.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+set.seed(119)
+#library(conflicted)
+library(phyloseq); packageVersion("phyloseq")
+library(DT)
+library(Biostrings); packageVersion("Biostrings")
+#library(microbiome)
+library(tidyverse)
+library(data.table)
+library(plyr)
+require(gdata)
+library(labdsv)
+library(reshape)
+library(metacoder)
+library(naniar)
+library(tibble)
+library(vegan)
+library(agricolae)
+library(patchwork)
+library(ampvis2)
+library(codefolder)
+library(pairwiseAdonis)
+library(microbiome)
+library(cowplot)
+library(DESeq2)
+library(ape)
+library(pime)
+library(randomForest)
+
+options(scipen=999)
+knitr::opts_current$get(c(
+  "cache",
+  "cache.path",
+  "cache.rebuild",
+  "dependson",
+  "autodep"
+))
+```
+
+> Hit the *Hide Code* button to hide the R code (visible by default).
+
+<aside>
+```{r, echo=FALSE, results='asis', eval=TRUE}
+codefolder::generic(init = "show", query = "pre.sourceCode",
+  style = "position: absolute; right: 14%; z-index: 200")
+```
+</aside>
+
+# Summary of Results
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #4
+remove(list = ls())
+load("page_build/trepo/pime-summary_trepo_pime_wf.rdata")
+
+ssu_asv_pime_sum[,2] <- list(NULL)
+ssu_asv_pime_sum <- ssu_asv_pime_sum %>% dplyr::rename("ASV reads" = "total reads") %>%
+                                             dplyr::rename("no. ASVs" = "total asvs")
+ssu_otu_pime_sum[,2:3] <- list(NULL)
+ssu_otu_pime_sum <- ssu_otu_pime_sum %>% dplyr::rename("OTU reads" = "total reads") %>%
+                                             dplyr::rename("no. OTUs" = "total otus")
+ssu_pime_sum <- dplyr::left_join(ssu_asv_pime_sum, ssu_otu_pime_sum)
+ssu_pime_sum <- ssu_pime_sum[, c(1:3,5,4,6)]
+
+ssu_merge_asv_pime_sum[,2] <- list(NULL)
+ssu_merge_asv_pime_sum <- ssu_merge_asv_pime_sum %>% dplyr::rename("ASV reads" = "total reads") %>%
+                                             dplyr::rename("no. ASVs" = "total asvs")
+ssu_merge_otu_pime_sum[,2:3] <- list(NULL)
+ssu_merge_otu_pime_sum <- ssu_merge_otu_pime_sum %>% dplyr::rename("OTU reads" = "total reads")%>%
+                                             dplyr::rename("no. OTUs" = "total otus")
+ssu_merge_pime_sum <- dplyr::left_join(ssu_merge_asv_pime_sum, ssu_merge_otu_pime_sum)
+ssu_merge_pime_sum <- ssu_merge_pime_sum[, c(1:3,5,4,6)]
+```
+
+In this workflow, we used PIME (Prevalence Interval for Microbiome Evaluation) to filter the FULL 16S rRNA (ASV & OTU) and the MERGED by replicates  (ASV & OTU) data sets. The first step in the process is to rarefy the data and then proceed with the filtering. Here is a summary of the results. Tables show comparisons of ASV vs. OTU data sets. 
+
+## Full Data Set ASV vs. OTU
+
+```{r, echo=FALSE, layout="l-body", eval=TRUE}
+knitr::kable(ssu_pime_sum)
+```
+
+## Merged Data Set ASV vs. OTU
+
+```{r, echo=FALSE, layout="l-body", eval=TRUE}
+knitr::kable(ssu_merge_pime_sum)
+```
+
+# Prerequisites
+
+This workflow contains diversity assessments for the 16S rRNA data set. In order to run the workflow, you either need to first run the  [DADA2 Workflow](trepo-dada2.html), the [Data Preparation workflow](trepo-data-prep.html), and the [OTU clustering workflow](trepo-otu.html). See the [Data Availability](data-availability.html) page for complete details.
+
+# Merged Samples (ASV Data)
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #3
+remove(list = ls())
+load("page_build/trepo/pime_ssu_merge_asv_wf.rdata")
+```
+
+
+```{r, include=FALSE}
+## LOad only after workflow is complete #2
+remove(list = ls())
+load("files/trepo/pime/rdata/pime_ssu_merge_asv_b4_rand.rdata")
+ssu_merge_samp_data <- sample_data(ssu_ps_work_merge)
+tmp_ps_obj <- ssu_ps_work_merge
+objects()
+rm(list = ls(pattern = "ssu_ps_work"))
+ssu_ps_work_merge <- tmp_ps_obj
+rm(tmp_ps_obj)
+objects()
+```
+
+
+```{r, include=FALSE}
+## Initial Load for PIME  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+load("page_build/trepo/otu_wf.rdata")
+```
+
+We will use PIME (Prevalence Interval for Microbiome Evaluation) to create a filtered data set.
+
+## Setup
+
+First, choose a phyloseq object and a sample data frame
+
+```{r}
+ssu_pime_ds <- ssu_ps_work_merge
+ssu_which_pime <- "ssu_pime_ds"
+ssu_pime_ds@phy_tree <- NULL
+
+### USE THIS TO CREATE NEW SAMPLE VARIABLE FOR SPLITTING
+##tmp_samp_data <- sample_data(ssu_pime_ds)	
+#tmp_samp_data$YR_TREAT <- paste(tmp_samp_data$YEAR, tmp_samp_data$TREAT, sep="_")
+#tmp_ps <- merge_phyloseq(ssu_pime_ds, tmp_samp_data)	
+#ssu_pime_ds <- tmp_ps	
+#rm(list = ls(pattern = "tmp_"))
+```
+
+```{r, echo=FALSE, eval=TRUE}
+tmp_ps <- ssu_ps_work_merge
+tmp_ps@phy_tree <- NULL
+tmp_ps
+```
+
+And then rarefy the data. 
+
+```{r}
+ssu_pime_sample_d <- data.frame(rowSums(otu_table(ssu_pime_ds)))
+ssu_pime_sample_d <- ssu_pime_sample_d %>% dplyr::rename(total_reads = 1)
+
+ssu_pime_ds <- rarefy_even_depth(ssu_pime_ds, 
+                          sample.size = min(ssu_pime_sample_d$total_reads), 
+                          trimOTUs = TRUE, replace = FALSE, rngseed = 119)
+```
+
+
+```
+`set.seed(119)` was used to initialize repeatable random subsampling.
+Please record this for your records so others can reproduce.
+Try `set.seed(119); .Random.seed` for the full vector
+
+15302 OTUs were removed because they are no longer 
+present in any sample after random subsampling
+
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_pime_ds
+```
+
+The first step in PIME is to define if the microbial community presents a high relative abundance of taxa with low prevalence, which is considered as noise in PIME analysis. This is calculated by random forests analysis and is the baseline noise detection.
+
+```{r}
+ssu_pime.oob.error <- pime.oob.error(ssu_pime_ds, "SITE")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_pime.oob.error
+```
+
+## Split by Predictor Variable
+
+```{r}
+data.frame(sample_data(ssu_pime_ds))
+ssu_per_variable_obj <- pime.split.by.variable(ssu_pime_ds, "SITE")
+ssu_per_variable_obj
+```
+
+<details markdown="1">
+<summary>Detailed results for splitting by sample variables  </summary>
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_per_variable_obj
+```
+</details>
+
+## Calculate Prevalence Intervals
+
+Using the output of `pime.split.by.variable`, we calculate the prevalence intervals with the function `pime.prevalence`. This function estimates the highest prevalence possible (no empty ASV table), calculates prevalence for taxa, starting at 5 maximum prevalence possible (no empty ASV table or dropping samples). After prevalence calculation, each prevalence interval are merged.
+
+```{r}
+ssu_prevalences <- pime.prevalence(ssu_per_variable_obj)
+ssu_prevalences
+```
+
+<details markdown="1">
+<summary>Detailed results for all prevalences intervals  </summary>
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_prevalences
+```
+</details>
+
+## Calculate Best Prevalence
+
+Finally, we use the function `pime.best.prevalence` to calculate the best prevalence. The function uses randomForest to build random forests trees for samples classification and variable importance computation. It performs classifications for each prevalence interval returned by `pime.prevalence`. Variable importance is calculated, returning the Mean Decrease Accuracy (MDA), Mean Decrease Impurity (MDI), overall and by sample group, and taxonomy for each ASV. PIME keeps the top 30 variables with highest MDA each prevalence level.
+
+```{r}
+set.seed(1911)
+ssu_best.prev <- pime.best.prevalence(ssu_prevalences, "SITE")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_best.prev$`OOB error`
+```
+
+```{r}
+ssu_what_is_best <- ssu_best.prev$`OOB error`
+ssu_what_is_best[, c(2:4)] <- sapply(ssu_what_is_best[, c(2:4)], as.numeric)
+ssu_what_is_best <- ssu_what_is_best %>% 
+                         dplyr::rename("OOB_error_rate" = "OOB error rate (%)")
+ssu_what_is_best$Interval <- str_replace_all(ssu_what_is_best$Interval, "%", "")
+ssu_best <- with(ssu_what_is_best, Interval[which.min(OOB_error_rate)])
+ssu_best <- paste("`", ssu_best, "`", sep = "")
+ssu_prev_choice <- paste("ssu_best.prev$`Importance`$", ssu_best, sep = "")
+ssu_imp_best <- eval(parse(text = (ssu_prev_choice)))
+```
+
+Looks like the lowest OOB error rate (%) that retains the most ASVs is `r min(ssu_what_is_best$OOB_error_rate)`% from `r ssu_best`. We will use this interval.
+
+## Best Prevalence Summary
+
+```{r}
+#ssu_imp_best[, 13:14] <- list(NULL)
+ssu_imp_best[,(ncol(ssu_imp_best)-1):ncol(ssu_imp_best)] <- list(NULL)
+ssu_imp_best <- ssu_imp_best %>% dplyr::rename("ASV_ID" = "SequenceID")
+```
+
+</br>
+
+```{r, layout='l-body-outset', echo=FALSE, eval=TRUE}
+## elementId need to be unique https://www.random.org/strings/
+ssu_imp_best_t <- ssu_imp_best #%>%
+  #dplyr::rename("Control" = "X0", "Warm_3" = "X3", "Warm_8" = "X8")
+
+datatable(ssu_imp_best_t, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Table of ASVs (max 30)
+                                     from the chosen prevalence
+                                     interval.')),
+          elementId = "856uu6dn9soetf8m9lwa",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(ssu_imp_best_t), fontSize = '80%') %>%
+  DT::formatRound(columns = 2:7, digits = 4)
+```
+
+Now we need to create a phyloseq object of ASVs at this cutoff (`r ssu_best`).
+
+```{r}
+ssu_best_val <- str_replace_all(ssu_best, "Prevalence ", "")
+ssu_best_val <- paste("ssu_prevalences$", ssu_best_val, sep = "")
+ssu_prevalence_best <- eval(parse(text = (ssu_best_val)))
+saveRDS(ssu_prevalence_best, "rdata/trepo/ssu_merge_asv_prevalence_best.rds")
+```
+
+And look at a summary of the data.
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_prevalence_best
+```
+
+```{r, echo=FALSE}
+ssu_min_read_ps <- min(readcount(ssu_prevalence_best))
+ssu_max_read_ps <- max(readcount(ssu_prevalence_best))
+ssu_total_reads_ps <- sum(readcount(ssu_prevalence_best))
+ssu_mean_reads_ps <- round(mean(readcount(ssu_prevalence_best)), digits = 0)
+ssu_median_reads_ps <- median(readcount(ssu_prevalence_best))
+ssu_total_asvs_ps <- ntaxa(ssu_prevalence_best)
+ssu_singleton_ps <- tryCatch(ntaxa(rare(ssu_prevalence_best,
+                                    detection = 1, prevalence = 0)),
+                         error=function(err) NA)
+ssu_singleton_ps_perc <- tryCatch(round((100*(ntaxa(rare(ssu_prevalence_best,
+                                                     detection = 1,
+                                                     prevalence = 0)) / ntaxa(ps))),
+                                    digits = 3),
+                              error=function(err) NA)
+ssu_sparsity_ps <- round(length(which(
+  abundances(ssu_prevalence_best) == 0))/length(abundances(ssu_prevalence_best)),
+  digits = 3)
+```
+
+| Metric                              | Results                         |
+|-------------------------------------|---------------------------------|
+| Min. number of reads                | `r ssu_min_read_ps`           |
+| Max. number of reads                | `r ssu_max_read_ps`           |
+| Total number of reads               | `r ssu_total_reads_ps`        |
+| Average number of reads             | `r ssu_mean_reads_ps`         |
+| Mean number of reads                | `r ssu_mean_reads_ps`         |
+| Median number of reads              | `r ssu_median_reads_ps`       |
+| Total ASVS                          | `r ssu_total_asvs_ps`         |
+| Sparsity                            | `r ssu_sparsity_ps`           |
+
+
+## Estimate Error in Prediction
+
+Using  the function `pime.error.prediction` we can estimate the error in prediction. For each prevalence interval, this function randomizes the samples labels into arbitrary groupings using `n` random permutations, defined by the `bootstrap` value. For each, randomized and prevalence filtered, data set the OOB error rate is calculated to estimate whether the original differences in groups of samples occur by chance. Results are in a list containing a table and a box plot summarizing the results.
+
+```{r}
+ssu_randomized <- pime.error.prediction(ssu_pime_ds, "TEMP",
+                                          bootstrap = 100, parallel = TRUE,
+                                          max.prev = 95)
+```
+
+<br/>
+
+```{r, echo=FALSE}
+ssu_oob_error <- ssu_randomized$`Results table`
+```
+
+```{r, echo=FALSE, layout='l-body', echo=FALSE, eval=FALSE}
+datatable(ssu_oob_error, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Table of ASV from the chosen
+                                     prevalence interval.')),
+          elementId = "3wng0omwe5ae8ing8b98",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(ssu_oob_error), fontSize = '80%') %>%
+  DT::formatRound(columns = 1:20, digits = 4)
+```
+
+```{r, echo=FALSE}
+ssu_randomized$Plot
+```
+
+It is also possible to estimate the variation of OOB error for each prevalence interval filtering. This is done by running the random forests classification for `n` times, determined by the `bootstrap` value. The function will return a box plot figure and a table for each classification error.
+
+```{r}
+ssu_replicated.oob.error <- pime.oob.replicate(ssu_prevalences, "SITE", 
+                                               bootstrap = 100, parallel = FALSE)
+```
+
+```{r, echo=FALSE, eval=TRUE, fig.height=5}
+# UNCOMMENT WHEN RAND DONE
+ssu_obb_orig <- ssu_replicated.oob.error$Plot
+#ssu_obb_rand <- ssu_randomized$Plot
+
+ssu_obb_orig <- ssu_obb_orig +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank()) +
+  labs(title = "OOB error Original data set")
+
+#ssu_obb_rand <- ssu_obb_rand  +
+#  labs(title = "OOB error Randomized data set")
+
+ssu_obb_orig #/ ssu_obb_rand
+```
+
+To obtain the confusion matrix from random forests classification use the following:
+
+```{r}
+ssu_prev_confuse <- paste("ssu_best.prev$`Confusion`$", ssu_best, sep = "")
+eval(parse(text = (ssu_prev_confuse)))
+```
+
+## Save Phyloseq PIME objects
+
+```{r}
+ssu_ps_pime <- ssu_prevalence_best
+ssu_ps_pime_tree <- rtree(ntaxa(ssu_ps_pime), rooted = TRUE,
+                           tip.label = taxa_names(ssu_ps_pime))
+ssu_ps_pime <- merge_phyloseq(ssu_ps_pime,
+                               sample_data,
+                               ssu_ps_pime_tree)
+saveRDS(ssu_ps_pime, "files/trepo/pime/rdata/ssu_ps_merge_asv_pime.rds")
+```
+
+### Split & save by predictor variable
+
+```{r}
+ssu_ps_pime_split <- pime.split.by.variable(ssu_ps_pime, "SITE")
+saveRDS(ssu_ps_pime_split$ALMR, "files/trepo/pime/rdata/ssu_ps_merge_asv_pime_ALMR.rds")
+saveRDS(ssu_ps_pime_split$CRIS, "files/trepo/pime/rdata/ssu_ps_merge_asv_pime_CRIS.rds")
+saveRDS(ssu_ps_pime_split$PAST, "files/trepo/pime/rdata/ssu_ps_merge_asv_pime_PAST.rds")
+saveRDS(ssu_ps_pime_split$PUCL, "files/trepo/pime/rdata/ssu_ps_merge_asv_pime_PUCL.rds")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_ps_pime_split
+```
+
+```{r, echo=FALSE}
+ssu_pime_preval.tax <- tax_table(ssu_ps_pime)
+write.table(ssu_pime_preval.tax,
+            file="files/trepo/pime/tables/ssu_merge_asv_PIME_tax_table.txt",
+            sep = "\t", quote = FALSE)
+
+ssu_pime_preval.asv <- otu_table(t(ssu_ps_pime))
+write.table(ssu_pime_preval.asv,
+            file="files/trepo/pime/tables/ssu_merge_asv_PIME_otu_table.txt",
+            sep = "\t", quote = FALSE)
+
+ssu_pime_preval.samp <- sample_data(ssu_ps_pime)
+write.table(ssu_pime_preval.samp,
+            file="files/trepo/pime/tables/ssu_merge_asv_PIME_sample_data.txt",
+            sep = "\t", quote = FALSE)
+```
+
+## Create Ampvis2 PIME Object
+
+```{r}
+ssu_otu <- data.frame(t(otu_table(ssu_ps_pime)))
+ssu_otu[] <- lapply(ssu_otu, as.numeric)
+ssu_otu <- as.matrix(ssu_otu)
+ssu_tax <- as.matrix(data.frame(tax_table(ssu_ps_pime)))
+ssu_samples <- data.frame(sample_data(ssu_ps_pime))
+ssu_ps_amp <- merge_phyloseq(otu_table(ssu_otu, taxa_are_rows = TRUE),
+                          tax_table(ssu_tax, ssu_tax),
+                          sample_data(ssu_samples))
+```
+
+```{r}
+ssu_amp_asv_pime  <- data.frame(otu_table(ssu_ps_amp))
+ssu_amp_asv_pime <- ssu_amp_asv_pime %>% tibble::rownames_to_column("OTU")
+ssu_amp_tax_pime  <- data.frame(tax_table(ssu_ps_amp))
+ssu_amp_tax_pime <- ssu_amp_tax_pime %>% tibble::rownames_to_column("OTU")
+ssu_amp_tax_pime$ASV_SEQ <- NULL
+colnames(ssu_amp_tax_pime)[colnames(ssu_amp_tax_pime) == "ASV_ID"] <- "Species"
+ssu_amp_asv_tax_pime <- left_join(ssu_amp_asv_pime, ssu_amp_tax_pime, by = "OTU")
+ssu_samp_data_t <- data.frame(ssu_merge_samp_data)
+#ssu_samp_data_t[,7:9] <- NULL
+ssu_amp_data_pime <- amp_load(ssu_amp_asv_tax_pime, metadata = ssu_samp_data_t)
+
+ssu_diversity_pime <-
+  amp_alphadiv(
+    ssu_amp_data_pime,
+    measure = "observed",
+    richness = FALSE)
+
+ssu_diversity_pime <-
+  ssu_diversity_pime %>%
+  dplyr::rename(
+    "total_reads" = "Reads",
+    "total_asvs" = "ObservedOTUs")
+
+ssu_diversity_pime$coverage = cut(ssu_diversity_pime$total_reads,
+                          c(0, 5000, 25000, 100000, 200000),
+                          labels = c(
+                            "low (< 5k)", "medium (5-25k)",
+                            "high (25-100k)", "extra_high (> 100k)"))
+ssu_diversity_pime <- ssu_diversity_pime[order(ssu_diversity_pime$SamName), ]
+ssu_amp_pime <- amp_load(ssu_amp_asv_tax_pime,
+                          metadata = ssu_diversity_pime, tree = ssu_ps_pime_tree)
+ssu_samp_pime <- ssu_diversity_pime
+ssu_samp_pime <- ssu_samp_pime %>% tibble::remove_rownames()
+```
+
+```{r, eval=TRUE, echo=FALSE}
+ssu_amp_pime
+```
+
+```{r}
+saveRDS(ssu_amp_pime, "files/trepo/pime/rdata/ssu_merge_asv_amp_pime.rds")
+```
+
+
+## Summary
+
+Let's take a look at a table of sample information. Any header with the `_p` suffix is the *PIME filtered* data.
+
+<br/>
+
+```{r, echo=FALSE}
+## This is for table only
+ssu_dummy_tab <- ssu_samp_pime
+ssu_dummy_tab <- ssu_dummy_tab %>%
+  dplyr::rename("total_reads_p" = "total_reads") %>%
+  dplyr::rename("total_asvs_p" = "total_asvs")
+ssu_dummy_tab$coverage <- NULL
+#ssu_samp_data_tab <- dplyr::left_join(ssu_samp_data, ssu_dummy_tab)
+#ssu_samp_data_tab <- ssu_samp_data_tab[, c(1:7,13,8,14,9,15,10,16,11,17,12)]
+```
+
+```{r, echo=FALSE, layout="l-body-outset", eval=TRUE}
+## elementId https://www.random.org/strings/
+
+datatable(ssu_dummy_tab, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Sample summary table.
+            Use the buttons to navigate through the table or
+            download a copy.')),
+          elementId = "k9rn0xxltiqkg0bowglj",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = c(5, 15)
+            )
+          ) %>%
+    DT::formatStyle(columns = colnames(ssu_dummy_tab),
+                    fontSize = '80%')
+```
+
+And here is how the data sets changed through the PIME filtering process.
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_ps_pime_ALMR <- ssu_ps_pime_split$ALMR
+ssu_ps_pime_CRIS <- ssu_ps_pime_split$CRIS
+ssu_ps_pime_PAST <- ssu_ps_pime_split$PAST
+ssu_ps_pime_PUCL <- ssu_ps_pime_split$PUCL
+
+tmp_objects <- data.frame(c("FULL data set", "Rarefied data", "PIME filtered data",
+                            "PIME (ALMR)", "PIME (CRIS)", "PIME (PAST)", "PIME (PUCL)"))
+tmp_samples <- c("ssu_ps_work_merge", "ssu_pime_ds", "ssu_ps_pime",
+                 "ssu_ps_pime_ALMR", "ssu_ps_pime_CRIS", "ssu_ps_pime_PAST", "ssu_ps_pime_PUCL")
+
+tmp_no_samp <- c()
+for (i in tmp_samples) {
+   tmp_get <- nsamples(get(i))
+   tmp_no_samp <- c(append(tmp_no_samp, tmp_get))
+}
+tmp_no_samp <- data.frame(tmp_no_samp)
+
+tmp_rc <- c()
+for (i in tmp_samples) {
+   tmp_get <- sum(readcount(get(i)))
+   tmp_rc <- c(append(tmp_rc, tmp_get))
+}
+tmp_rc <- data.frame(tmp_rc)
+tmp_asv <- c()
+for (i in tmp_samples) {
+   tmp_get <- ntaxa(get(i))
+   tmp_asv <- c(append(tmp_asv, tmp_get))
+}
+tmp_asv <- data.frame(tmp_asv)
+
+ssu_merge_asv_pime_sum <- dplyr::bind_cols(tmp_objects, tmp_samples) %>%
+                      dplyr::bind_cols(., tmp_no_samp) %>%
+                      dplyr::bind_cols(., tmp_rc) %>%
+                      dplyr::bind_cols(., tmp_asv) %>%
+  dplyr::rename("Description" = 1, "object name" = 2, "no. samples" = 3,
+                "total reads" = 4, "total asvs" = 5)
+rm(list = ls(pattern = "tmp_"))
+```
+
+<br/>
+
+```{r, echo=FALSE, layout="l-body-outset", eval=TRUE}
+knitr::kable(ssu_merge_asv_pime_sum)
+```
+
+
+```{r, echo=FALSE}
+saveRDS(ssu_samp_pime, "files/trepo/pime/rdata/ssu_merge_asv_samp_pime.rds")
+save.image("page_build/trepo/pime_ssu_merge_asv_wf.rdata")
+objects()
+```
+
+```{r include=FALSE, eval=TRUE}
+gdata::keep(ssu_merge_asv_pime_sum, sure = TRUE)
+```
+
+# Merged Samples (OTU Data)
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #3
+load("page_build/trepo/pime_ssu_merge_otu_wf.rdata")
+```
+
+
+```{r, include=FALSE}
+## LOad only after workflow is complete #2
+remove(list = ls())
+load("files/trepo/pime/rdata/pime_ssu_merge_otu_b4_rand.rdata")
+ssu_samp_data <- sample_data(ssu_ps_work_merge_otu)
+tmp_ps_obj <- ssu_ps_work_merge_otu
+objects()
+rm(list = ls(pattern = "ssu_ps_work"))
+ssu_ps_work_merge_otu <- tmp_ps_obj
+rm(tmp_ps_obj)
+objects()
+```
+
+
+```{r, include=FALSE}
+## Initial Load for PIME  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+load("page_build/trepo/otu_wf.rdata")
+```
+
+## Setup
+
+First, choose a phyloseq object and a sample data frame
+
+```{r}
+ssu_pime_ds <- ssu_ps_work_merge_otu
+ssu_which_pime <- "ssu_pime_ds"
+ssu_pime_ds@phy_tree <- NULL
+
+### USE THIS TO CREATE NEW SAMPLE VARIABLE FOR SPLITTING
+#tmp_samp_data <- sample_data(ssu_pime_ds)	
+#tmp_samp_data$YR_TREAT <- paste(tmp_samp_data$YEAR, tmp_samp_data$TREAT, sep="_")	
+#tmp_ps <- merge_phyloseq(ssu_pime_ds, tmp_samp_data)	
+#ssu_pime_ds <- tmp_ps	
+#rm(list = ls(pattern = "tmp_"))
+```
+
+```{r, echo=FALSE, eval=TRUE}
+tmp_ps <- ssu_ps_work_merge_otu
+tmp_ps@phy_tree <- NULL
+tmp_ps
+```
+Then rarefy the data.
+
+```{r}
+ssu_pime_sample_d <- data.frame(rowSums(otu_table(ssu_pime_ds)))
+ssu_pime_sample_d <- ssu_pime_sample_d %>% dplyr::rename(total_reads = 1)
+
+ssu_pime_ds <- rarefy_even_depth(ssu_pime_ds, 
+                                 sample.size = min(ssu_pime_sample_d$total_reads), 
+                                 trimOTUs = TRUE, replace = FALSE, rngseed = 119)
+ssu_pime_ds
+```
+
+
+```
+`set.seed(119)` was used to initialize repeatable random subsampling.
+Please record this for your records so others can reproduce.
+Try `set.seed(119); .Random.seed` for the full vector
+
+6291 OTUs were removed because they are no longer 
+present in any sample after random subsampling
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_pime_ds
+```
+
+The first step in PIME is to define if the microbial community presents a high relative abundance of taxa with low prevalence, which is considered as noise in PIME analysis. This is calculated by random forests analysis and is the baseline noise detection.
+
+```{r}
+ssu_pime.oob.error <- pime.oob.error(ssu_pime_ds, "SITE")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_pime.oob.error
+```
+
+## Split by Predictor Variable
+
+```{r}
+data.frame(sample_data(ssu_pime_ds))
+ssu_per_variable_obj <- pime.split.by.variable(ssu_pime_ds, "SITE")
+ssu_per_variable_obj
+```
+
+<details markdown="1">
+<summary>Detailed results for splitting by sample variables  </summary>
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_per_variable_obj
+```
+</details>
+
+## Calculate Prevalence Intervals
+
+Using the output of `pime.split.by.variable`, we calculate the prevalence intervals with the function `pime.prevalence`. This function estimates the highest prevalence possible (no empty ASV table), calculates prevalence for taxa, starting at 5 maximum prevalence possible (no empty ASV table or dropping samples). After prevalence calculation, each prevalence interval are merged.
+
+```{r}
+ssu_prevalences <- pime.prevalence(ssu_per_variable_obj)
+ssu_prevalences
+```
+
+<details markdown="1">
+<summary>Detailed results for all prevalences intervals  </summary>
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_prevalences
+```
+</details>
+
+## Calculate Best Prevalence
+
+Finally, we use the function `pime.best.prevalence` to calculate the best prevalence. The function uses randomForest to build random forests trees for samples classification and variable importance computation. It performs classifications for each prevalence interval returned by `pime.prevalence`. Variable importance is calculated, returning the Mean Decrease Accuracy (MDA), Mean Decrease Impurity (MDI), overall and by sample group, and taxonomy for each ASV. PIME keeps the top 30 variables with highest MDA each prevalence level.
+
+```{r}
+set.seed(1911)
+ssu_best.prev <- pime.best.prevalence(ssu_prevalences, "SITE")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_best.prev$`OOB error`
+```
+
+```{r}
+ssu_what_is_best <- ssu_best.prev$`OOB error`
+ssu_what_is_best[, c(2:4)] <- sapply(ssu_what_is_best[, c(2:4)], as.numeric)
+ssu_what_is_best <- ssu_what_is_best %>% 
+                          dplyr::rename("OOB_error_rate" = "OOB error rate (%)")
+ssu_what_is_best$Interval <- str_replace_all(ssu_what_is_best$Interval, "%", "")
+ssu_best <- with(ssu_what_is_best, Interval[which.min(OOB_error_rate)])
+ssu_best <- paste("`", ssu_best, "`", sep = "")
+ssu_prev_choice <- paste("ssu_best.prev$`Importance`$", ssu_best, sep = "")
+ssu_imp_best <- eval(parse(text = (ssu_prev_choice)))
+```
+
+Looks like the lowest OOB error rate (%) that retains the most ASVs is `r min(ssu_what_is_best$OOB_error_rate)`% from `r ssu_best`. We will use this interval.
+
+## Best Prevalence Summary
+
+```{r}
+#ssu_imp_best[, 13:14] <- list(NULL)
+ssu_imp_best[,(ncol(ssu_imp_best)-1):ncol(ssu_imp_best)] <- list(NULL)
+ssu_imp_best <- ssu_imp_best %>% dplyr::rename("ASV_ID" = "SequenceID")
+```
+
+</br>
+
+```{r, layout='l-body-outset', echo=FALSE, eval=TRUE}
+## elementId need to be unique https://www.random.org/strings/
+ssu_imp_best_t <- ssu_imp_best #%>%
+  #dplyr::rename("Control" = "X0", "Warm_3" = "X3", "Warm_8" = "X8")
+
+datatable(ssu_imp_best_t, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Table of ASVs (max 30)
+                                     from the chosen prevalence
+                                     interval.')),
+          elementId = "pf0wohnh74w860fku3z5",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(ssu_imp_best_t), fontSize = '80%') %>%
+  DT::formatRound(columns = 2:7, digits = 4)
+```
+
+Now we need to create a phyloseq object of ASVs at this cutoff (`r ssu_best`).
+
+```{r}
+ssu_best_val <- str_replace_all(ssu_best, "Prevalence ", "")
+ssu_best_val <- paste("ssu_prevalences$", ssu_best_val, sep = "")
+ssu_prevalence_best <- eval(parse(text = (ssu_best_val)))
+saveRDS(ssu_prevalence_best, "rdata/trepo/ssu_merge_otu_prevalence_best.rds")
+```
+
+And look at a summary of the data.
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_prevalence_best
+```
+
+```{r, echo=FALSE}
+ssu_min_read_ps <- min(readcount(ssu_prevalence_best))
+ssu_max_read_ps <- max(readcount(ssu_prevalence_best))
+ssu_total_reads_ps <- sum(readcount(ssu_prevalence_best))
+ssu_mean_reads_ps <- round(mean(readcount(ssu_prevalence_best)), digits = 0)
+ssu_median_reads_ps <- median(readcount(ssu_prevalence_best))
+ssu_total_otus_ps <- ntaxa(ssu_prevalence_best)
+ssu_singleton_ps <- tryCatch(ntaxa(rare(ssu_prevalence_best,
+                                    detection = 1, prevalence = 0)),
+                         error=function(err) NA)
+ssu_singleton_ps_perc <- tryCatch(round((100*(ntaxa(rare(ssu_prevalence_best,
+                                                     detection = 1,
+                                                     prevalence = 0)) / ntaxa(ps))),
+                                    digits = 3),
+                              error=function(err) NA)
+ssu_sparsity_ps <- round(length(which(
+  abundances(ssu_prevalence_best) == 0))/length(abundances(ssu_prevalence_best)),
+  digits = 3)
+```
+
+| Metric                              | Results                         |
+|-------------------------------------|---------------------------------|
+| Min. number of reads                | `r ssu_min_read_ps`           |
+| Max. number of reads                | `r ssu_max_read_ps`           |
+| Total number of reads               | `r ssu_total_reads_ps`        |
+| Average number of reads             | `r ssu_mean_reads_ps`         |
+| Mean number of reads                | `r ssu_mean_reads_ps`         |
+| Median number of reads              | `r ssu_median_reads_ps`       |
+| Total ASVS                          | `r ssu_total_otus_ps`         |
+| Sparsity                            | `r ssu_sparsity_ps`           |
+
+
+## Estimate Error in Prediction
+
+Using  the function `pime.error.prediction` we can estimate the error in prediction. For each prevalence interval, this function randomizes the samples labels into arbitrary groupings using `n` random permutations, defined by the `bootstrap` value. For each, randomized and prevalence filtered, data set the OOB error rate is calculated to estimate whether the original differences in groups of samples occur by chance. Results are in a list containing a table and a box plot summarizing the results.
+
+```{r}
+ssu_randomized <- pime.error.prediction(ssu_pime_ds, "TEMP",
+                                          bootstrap = 100, parallel = TRUE,
+                                          max.prev = 95)
+```
+
+<br/>
+
+```{r, echo=FALSE}
+ssu_oob_error <- ssu_randomized$`Results table`
+```
+
+```{r, echo=FALSE, layout='l-body', echo=FALSE, eval=FALSE}
+datatable(ssu_oob_error, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Table of ASV from the chosen
+                                     prevalence interval.')),
+          elementId = "nt47vep54lg7bc0wjo7r",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(ssu_oob_error), fontSize = '80%') %>%
+  DT::formatRound(columns = 1:20, digits = 4)
+```
+
+```{r, echo=FALSE}
+ssu_randomized$Plot
+```
+
+It is also possible to estimate the variation of OOB error for each prevalence interval filtering. This is done by running the random forests classification for `n` times, determined by the `bootstrap` value. The function will return a box plot figure and a table for each classification error.
+
+```{r}
+ssu_replicated.oob.error <- pime.oob.replicate(ssu_prevalences, "SITE", 
+                                               bootstrap = 100, parallel = FALSE)
+```
+
+```{r, echo=FALSE, eval=TRUE, fig.height=5}
+# UNCOMMENT WHEN RAND DONE
+ssu_obb_orig <- ssu_replicated.oob.error$Plot
+#ssu_obb_rand <- ssu_randomized$Plot
+
+ssu_obb_orig <- ssu_obb_orig +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank()) +
+  labs(title = "OOB error Original data set")
+
+#ssu_obb_rand <- ssu_obb_rand  +
+#  labs(title = "OOB error Randomized data set")
+
+ssu_obb_orig #/ ssu_obb_rand
+```
+
+To obtain the confusion matrix from random forests classification use the following:
+
+```{r}
+ssu_prev_confuse <- paste("ssu_best.prev$`Confusion`$", ssu_best, sep = "")
+eval(parse(text = (ssu_prev_confuse)))
+```
+
+## Save Phyloseq PIME objects
+
+```{r}
+ssu_ps_pime <- ssu_prevalence_best
+ssu_ps_pime_tree <- rtree(ntaxa(ssu_ps_pime), rooted = TRUE,
+                           tip.label = taxa_names(ssu_ps_pime))
+ssu_ps_pime <- merge_phyloseq(ssu_ps_pime,
+                               sample_data,
+                               ssu_ps_pime_tree)
+saveRDS(ssu_ps_pime, "files/trepo/pime/rdata/ssu_ps_merge_otu_pime.rds")
+```
+
+### Split & save by predictor variable
+
+```{r}
+ssu_ps_pime_split <- pime.split.by.variable(ssu_ps_pime, "SITE")
+saveRDS(ssu_ps_pime_split$ALMR, "files/trepo/pime/rdata/ssu_ps_merge_otu_pime_ALMR.rds")
+saveRDS(ssu_ps_pime_split$CRIS, "files/trepo/pime/rdata/ssu_ps_merge_otu_pime_CRIS.rds")
+saveRDS(ssu_ps_pime_split$PAST, "files/trepo/pime/rdata/ssu_ps_merge_otu_pime_PAST.rds")
+saveRDS(ssu_ps_pime_split$PUCL, "files/trepo/pime/rdata/ssu_ps_merge_otu_pime_PUCL.rds")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_ps_pime_split
+```
+
+```{r, echo=FALSE}
+ssu_pime_preval.tax <- tax_table(ssu_ps_pime)
+write.table(ssu_pime_preval.tax,
+            file="files/trepo/pime/tables/ssu_merge_otu_PIME_tax_table.txt",
+            sep = "\t", quote = FALSE)
+
+ssu_pime_preval.otu <- otu_table(t(ssu_ps_pime))
+write.table(ssu_pime_preval.otu,
+            file="files/trepo/pime/tables/ssu_merge_otu_PIME_otu_table.txt",
+            sep = "\t", quote = FALSE)
+
+ssu_pime_preval.samp <- sample_data(ssu_ps_pime)
+write.table(ssu_pime_preval.samp,
+            file="files/trepo/pime/tables/ssu_merge_otu_PIME_sample_data.txt",
+            sep = "\t", quote = FALSE)
+```
+
+## Create Ampvis2 PIME Object
+
+```{r}
+ssu_otu <- data.frame(t(otu_table(ssu_ps_pime)))
+ssu_otu[] <- lapply(ssu_otu, as.numeric)
+ssu_otu <- as.matrix(ssu_otu)
+ssu_tax <- as.matrix(data.frame(tax_table(ssu_ps_pime)))
+ssu_samples <- data.frame(sample_data(ssu_ps_pime))
+ssu_ps_amp <- merge_phyloseq(otu_table(ssu_otu, taxa_are_rows = TRUE),
+                          tax_table(ssu_tax, ssu_tax),
+                          sample_data(ssu_samples))
+```
+
+```{r}
+ssu_amp_otu_pime  <- data.frame(otu_table(ssu_ps_amp))
+ssu_amp_otu_pime <- ssu_amp_otu_pime %>% tibble::rownames_to_column("OTU")
+ssu_amp_tax_pime  <- data.frame(tax_table(ssu_ps_amp))
+ssu_amp_tax_pime <- ssu_amp_tax_pime %>% tibble::rownames_to_column("OTU")
+ssu_amp_tax_pime$ASV_SEQ <- NULL
+
+## THE NEXT  COMMAND SHOULD BE REMOVED, THIS IS A TEMP FIX
+## BECAUSE OTU_ID'S not INCLUDED FROM OTU WF
+ssu_amp_tax_pime$ASV_ID <- ssu_amp_tax_pime$OTU
+#########
+colnames(ssu_amp_tax_pime)[colnames(ssu_amp_tax_pime) == "ASV_ID"] <- "Species"
+ssu_amp_otu_tax_pime <- left_join(ssu_amp_otu_pime, ssu_amp_tax_pime, by = "OTU")
+ssu_samp_data_t <- data.frame(ssu_samp_data)
+#ssu_samp_data_t[,7:9] <- NULL
+ssu_amp_data_pime <- amp_load(ssu_amp_otu_tax_pime, metadata = ssu_samp_data_t)
+
+ssu_diversity_pime <-
+  amp_alphadiv(
+    ssu_amp_data_pime,
+    measure = "observed",
+    richness = FALSE)
+
+ssu_diversity_pime <-
+  ssu_diversity_pime %>%
+  dplyr::rename(
+    "total_reads" = "Reads",
+    "total_otus" = "ObservedOTUs")
+
+ssu_diversity_pime$coverage = cut(ssu_diversity_pime$total_reads,
+                          c(0, 5000, 25000, 100000, 200000),
+                          labels = c(
+                            "low (< 5k)", "medium (5-25k)",
+                            "high (25-100k)", "extra_high (> 100k)"))
+ssu_diversity_pime <- ssu_diversity_pime[order(ssu_diversity_pime$SamName), ]
+ssu_amp_pime <- amp_load(ssu_amp_otu_tax_pime,
+                          metadata = ssu_diversity_pime, tree = ssu_ps_pime_tree)
+ssu_samp_pime <- ssu_diversity_pime
+ssu_samp_pime <- ssu_samp_pime %>% tibble::remove_rownames()
+```
+
+```{r, eval=TRUE, echo=FALSE}
+ssu_amp_pime
+```
+
+```{r}
+saveRDS(ssu_amp_pime, "files/trepo/pime/rdata/ssu_merge_otu_amp_pime.rds")
+```
+
+
+## Summary
+
+Let's take a look at a table of sample information. Any header with the `_p` suffix is the *PIME filtered* data.
+
+<br/>
+
+```{r, echo=FALSE}
+## This is for table only
+ssu_dummy_tab <- ssu_samp_pime
+ssu_dummy_tab <- ssu_dummy_tab %>%
+  dplyr::rename("total_reads_p" = "total_reads") %>%
+  dplyr::rename("total_otus_p" = "total_otus")
+ssu_dummy_tab$coverage <- NULL
+#ssu_samp_data_tab <- dplyr::left_join(ssu_samp_data, ssu_dummy_tab)
+#ssu_samp_data_tab <- ssu_samp_data_tab[, c(1:7,13,8,14,9,15,10,16,11,17,12)]
+```
+
+```{r, echo=FALSE, layout="l-body-outset", eval=TRUE}
+## elementId https://www.random.org/strings/
+
+datatable(ssu_dummy_tab, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Sample summary table.
+            Use the buttons to navigate through the table or
+            download a copy.')),
+          elementId = "rpirfampwp2p4vv05q7i",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = c(5, 15)
+            )
+          ) %>%
+    DT::formatStyle(columns = colnames(ssu_dummy_tab),
+                    fontSize = '80%')
+```
+
+And here is how the data sets changed through the PIME filtering process.
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_ps_pime_ALMR <- ssu_ps_pime_split$ALMR
+ssu_ps_pime_CRIS <- ssu_ps_pime_split$CRIS
+ssu_ps_pime_PAST <- ssu_ps_pime_split$PAST
+ssu_ps_pime_PUCL <- ssu_ps_pime_split$PUCL
+
+tmp_objects <- data.frame(c("FULL data set", "Rarefied data", "PIME filtered data",
+                            "PIME (ALMR)", "PIME (CRIS)", "PIME (PAST)", "PIME (PUCL)"))
+tmp_samples <- c("ssu_ps_work_merge_otu", "ssu_pime_ds", "ssu_ps_pime",
+                 "ssu_ps_pime_ALMR", "ssu_ps_pime_CRIS", "ssu_ps_pime_PAST", "ssu_ps_pime_PUCL")
+tmp_no_samp <- c()
+for (i in tmp_samples) {
+   tmp_get <- nsamples(get(i))
+   tmp_no_samp <- c(append(tmp_no_samp, tmp_get))
+}
+tmp_no_samp <- data.frame(tmp_no_samp)
+
+tmp_rc <- c()
+for (i in tmp_samples) {
+   tmp_get <- sum(readcount(get(i)))
+   tmp_rc <- c(append(tmp_rc, tmp_get))
+}
+tmp_rc <- data.frame(tmp_rc)
+tmp_otu <- c()
+for (i in tmp_samples) {
+   tmp_get <- ntaxa(get(i))
+   tmp_otu <- c(append(tmp_otu, tmp_get))
+}
+tmp_otu <- data.frame(tmp_otu)
+
+ssu_merge_otu_pime_sum <- dplyr::bind_cols(tmp_objects, tmp_samples) %>%
+                      dplyr::bind_cols(., tmp_no_samp) %>%
+                      dplyr::bind_cols(., tmp_rc) %>%
+                      dplyr::bind_cols(., tmp_otu) %>%
+  dplyr::rename("Description" = 1, "object name" = 2, "no. samples" = 3,
+                "total reads" = 4, "total otus" = 5)
+rm(list = ls(pattern = "tmp_"))
+```
+
+<br/>
+
+```{r, echo=FALSE, layout="l-body-outset", eval=TRUE}
+knitr::kable(ssu_merge_otu_pime_sum)
+```
+
+
+```{r, echo=FALSE}
+saveRDS(ssu_samp_pime, "files/trepo/pime/rdata/ssu_merge_otu_samp_pime.rds")
+save.image("page_build/trepo/pime_ssu_merge_otu_wf.rdata")
+```
+
+```{r include=FALSE, eval=TRUE}
+gdata::keep(ssu_merge_asv_pime_sum, ssu_merge_otu_pime_sum, sure = TRUE)
+```
+
+# All Samples (ASV Data)
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #3
+load("page_build/trepo/pime_ssu_asv_wf.rdata")
+```
+
+
+```{r, include=FALSE}
+## LOad only after workflow is complete #2
+remove(list = ls())
+load("files/trepo/pime/rdata/pime_ssu_asv_b4_rand.rdata")
+ssu_samp_data <- sample_data(ssu_ps_work)
+tmp_ps_obj <- ssu_ps_work
+objects()
+rm(list = ls(pattern = "ssu_ps_work"))
+ssu_ps_work <- tmp_ps_obj
+rm(tmp_ps_obj)
+objects()
+```
+
+
+```{r, include=FALSE}
+## Initial Load for PIME  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+load("page_build/trepo/otu_wf.rdata")
+```
+
+
+We will use PIME (Prevalence Interval for Microbiome Evaluation) to create a filtered data set.
+
+## Setup
+
+First, choose a phyloseq object and a sample data frame
+
+```{r}
+ssu_pime_ds <- ssu_ps_work
+ssu_which_pime <- "ssu_pime_ds"
+ssu_pime_ds@phy_tree <- NULL
+
+### USE THIS TO CREATE NEW SAMPLE VARIABLE FOR SPLITTING
+##tmp_samp_data <- sample_data(ssu_pime_ds)	
+#tmp_samp_data$YR_TREAT <- paste(tmp_samp_data$YEAR, tmp_samp_data$TREAT, sep="_")
+#tmp_ps <- merge_phyloseq(ssu_pime_ds, tmp_samp_data)	
+#ssu_pime_ds <- tmp_ps	
+#rm(list = ls(pattern = "tmp_"))
+```
+
+```{r, echo=FALSE, eval=TRUE}
+tmp_ps <- ssu_ps_work
+tmp_ps@phy_tree <- NULL
+tmp_ps
+```
+
+```{r}
+ssu_pime_sample_d <- data.frame(rowSums(otu_table(ssu_pime_ds)))
+ssu_pime_sample_d <- ssu_pime_sample_d %>% dplyr::rename(total_reads = 1)
+
+ssu_pime_ds <- rarefy_even_depth(ssu_pime_ds, 
+                          sample.size = min(ssu_pime_sample_d$total_reads), 
+                          trimOTUs = TRUE, replace = FALSE, rngseed = 119)
+```
+
+
+```
+`set.seed(119)` was used to initialize repeatable random subsampling.
+Please record this for your records so others can reproduce.
+Try `set.seed(119); .Random.seed` for the full vector
+
+19907 OTUs were removed because they are no longer 
+present in any sample after random subsampling
+
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_pime_ds
+```
+
+The first step in PIME is to define if the microbial community presents a high relative abundance of taxa with low prevalence, which is considered as noise in PIME analysis. This is calculated by random forests analysis and is the baseline noise detection.
+
+```{r}
+ssu_pime.oob.error <- pime.oob.error(ssu_pime_ds, "SITE")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_pime.oob.error
+```
+
+## Split by Predictor Variable
+
+```{r}
+data.frame(sample_data(ssu_pime_ds))
+ssu_per_variable_obj <- pime.split.by.variable(ssu_pime_ds, "SITE")
+ssu_per_variable_obj
+```
+
+<details markdown="1">
+<summary>Detailed results for splitting by sample variables  </summary>
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_per_variable_obj
+```
+</details>
+
+## Calculate Prevalence Intervals
+
+Using the output of `pime.split.by.variable`, we calculate the prevalence intervals with the function `pime.prevalence`. This function estimates the highest prevalence possible (no empty ASV table), calculates prevalence for taxa, starting at 5 maximum prevalence possible (no empty ASV table or dropping samples). After prevalence calculation, each prevalence interval are merged.
+
+```{r}
+ssu_prevalences <- pime.prevalence(ssu_per_variable_obj)
+ssu_prevalences
+```
+
+<details markdown="1">
+<summary>Detailed results for all prevalences intervals  </summary>
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_prevalences
+```
+</details>
+
+## Calculate Best Prevalence
+
+Finally, we use the function `pime.best.prevalence` to calculate the best prevalence. The function uses randomForest to build random forests trees for samples classification and variable importance computation. It performs classifications for each prevalence interval returned by `pime.prevalence`. Variable importance is calculated, returning the Mean Decrease Accuracy (MDA), Mean Decrease Impurity (MDI), overall and by sample group, and taxonomy for each ASV. PIME keeps the top 30 variables with highest MDA each prevalence level.
+
+```{r}
+set.seed(1911)
+ssu_best.prev <- pime.best.prevalence(ssu_prevalences, "SITE")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_best.prev$`OOB error`
+```
+
+```{r}
+ssu_what_is_best <- ssu_best.prev$`OOB error`
+ssu_what_is_best[, c(2:4)] <- sapply(ssu_what_is_best[, c(2:4)], as.numeric)
+ssu_what_is_best <- ssu_what_is_best %>% 
+                         dplyr::rename("OOB_error_rate" = "OOB error rate (%)")
+ssu_what_is_best$Interval <- str_replace_all(ssu_what_is_best$Interval, "%", "")
+ssu_best <- with(ssu_what_is_best, Interval[which.min(OOB_error_rate)])
+ssu_best <- paste("`", ssu_best, "`", sep = "")
+ssu_prev_choice <- paste("ssu_best.prev$`Importance`$", ssu_best, sep = "")
+ssu_imp_best <- eval(parse(text = (ssu_prev_choice)))
+```
+
+Looks like the lowest OOB error rate (%) that retains the most ASVs is `r min(ssu_what_is_best$OOB_error_rate)`% from `r ssu_best`. We will use this interval.
+
+## Best Prevalence Summary
+
+```{r}
+#ssu_imp_best[, 13:14] <- list(NULL)
+ssu_imp_best[,(ncol(ssu_imp_best)-1):ncol(ssu_imp_best)] <- list(NULL)
+ssu_imp_best <- ssu_imp_best %>% dplyr::rename("ASV_ID" = "SequenceID")
+```
+
+</br>
+
+```{r, layout='l-body-outset', echo=FALSE, eval=TRUE}
+## elementId need to be unique https://www.random.org/strings/
+ssu_imp_best_t <- ssu_imp_best #%>%
+  #dplyr::rename("Control" = "X0", "Warm_3" = "X3", "Warm_8" = "X8")
+
+datatable(ssu_imp_best_t, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Table of ASVs (max 30)
+                                     from the chosen prevalence
+                                     interval.')),
+          elementId = "jl2ze7jfzrnn9ytdht9x",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(ssu_imp_best_t), fontSize = '80%') %>%
+  DT::formatRound(columns = 2:7, digits = 4)
+```
+
+Now we need to create a phyloseq object of ASVs at this cutoff (`r ssu_best`).
+
+```{r}
+ssu_best_val <- str_replace_all(ssu_best, "Prevalence ", "")
+ssu_best_val <- paste("ssu_prevalences$", ssu_best_val, sep = "")
+ssu_prevalence_best <- eval(parse(text = (ssu_best_val)))
+saveRDS(ssu_prevalence_best, "rdata/trepo/ssu_asv_prevalence_best.rds")
+```
+
+And look at a summary of the data.
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_prevalence_best
+```
+
+```{r, echo=FALSE}
+ssu_min_read_ps <- min(readcount(ssu_prevalence_best))
+ssu_max_read_ps <- max(readcount(ssu_prevalence_best))
+ssu_total_reads_ps <- sum(readcount(ssu_prevalence_best))
+ssu_mean_reads_ps <- round(mean(readcount(ssu_prevalence_best)), digits = 0)
+ssu_median_reads_ps <- median(readcount(ssu_prevalence_best))
+ssu_total_asvs_ps <- ntaxa(ssu_prevalence_best)
+ssu_singleton_ps <- tryCatch(ntaxa(rare(ssu_prevalence_best,
+                                    detection = 1, prevalence = 0)),
+                         error=function(err) NA)
+ssu_singleton_ps_perc <- tryCatch(round((100*(ntaxa(rare(ssu_prevalence_best,
+                                                     detection = 1,
+                                                     prevalence = 0)) / ntaxa(ps))),
+                                    digits = 3),
+                              error=function(err) NA)
+ssu_sparsity_ps <- round(length(which(
+  abundances(ssu_prevalence_best) == 0))/length(abundances(ssu_prevalence_best)),
+  digits = 3)
+```
+
+| Metric                              | Results                         |
+|-------------------------------------|---------------------------------|
+| Min. number of reads                | `r ssu_min_read_ps`           |
+| Max. number of reads                | `r ssu_max_read_ps`           |
+| Total number of reads               | `r ssu_total_reads_ps`        |
+| Average number of reads             | `r ssu_mean_reads_ps`         |
+| Mean number of reads                | `r ssu_mean_reads_ps`         |
+| Median number of reads              | `r ssu_median_reads_ps`       |
+| Total ASVS                          | `r ssu_total_asvs_ps`         |
+| Sparsity                            | `r ssu_sparsity_ps`           |
+
+
+## Estimate Error in Prediction
+
+Using  the function `pime.error.prediction` we can estimate the error in prediction. For each prevalence interval, this function randomizes the samples labels into arbitrary groupings using `n` random permutations, defined by the `bootstrap` value. For each, randomized and prevalence filtered, data set the OOB error rate is calculated to estimate whether the original differences in groups of samples occur by chance. Results are in a list containing a table and a box plot summarizing the results.
+
+```{r}
+ssu_randomized <- pime.error.prediction(ssu_pime_ds, "TEMP",
+                                          bootstrap = 100, parallel = TRUE,
+                                          max.prev = 95)
+```
+
+<br/>
+
+```{r, echo=FALSE}
+ssu_oob_error <- ssu_randomized$`Results table`
+```
+
+```{r, echo=FALSE, layout='l-body', echo=FALSE, eval=FALSE}
+datatable(ssu_oob_error, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Table of ASV from the chosen
+                                     prevalence interval.')),
+          elementId = "v0gti9snuhbsbqeejbyv",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(ssu_oob_error), fontSize = '80%') %>%
+  DT::formatRound(columns = 1:20, digits = 4)
+```
+
+```{r, echo=FALSE}
+ssu_randomized$Plot
+```
+
+It is also possible to estimate the variation of OOB error for each prevalence interval filtering. This is done by running the random forests classification for `n` times, determined by the `bootstrap` value. The function will return a box plot figure and a table for each classification error.
+
+```{r}
+ssu_replicated.oob.error <- pime.oob.replicate(ssu_prevalences, "SITE", 
+                                               bootstrap = 100, parallel = FALSE)
+```
+
+```{r, echo=FALSE, eval=TRUE, fig.height=5}
+# UNCOMMENT WHEN RAND DONE
+ssu_obb_orig <- ssu_replicated.oob.error$Plot
+#ssu_obb_rand <- ssu_randomized$Plot
+
+ssu_obb_orig <- ssu_obb_orig +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank()) +
+  labs(title = "OOB error Original data set")
+
+#ssu_obb_rand <- ssu_obb_rand  +
+#  labs(title = "OOB error Randomized data set")
+
+ssu_obb_orig #/ ssu_obb_rand
+```
+
+To obtain the confusion matrix from random forests classification use the following:
+
+```{r}
+ssu_prev_confuse <- paste("ssu_best.prev$`Confusion`$", ssu_best, sep = "")
+eval(parse(text = (ssu_prev_confuse)))
+```
+
+## Save Phyloseq PIME objects
+
+```{r}
+ssu_ps_pime <- ssu_prevalence_best
+ssu_ps_pime_tree <- rtree(ntaxa(ssu_ps_pime), rooted = TRUE,
+                           tip.label = taxa_names(ssu_ps_pime))
+ssu_ps_pime <- merge_phyloseq(ssu_ps_pime,
+                               sample_data,
+                               ssu_ps_pime_tree)
+saveRDS(ssu_ps_pime, "files/trepo/pime/rdata/ssu_ps_asv_pime.rds")
+```
+
+### Split & save by predictor variable
+
+```{r}
+ssu_ps_pime_split <- pime.split.by.variable(ssu_ps_pime, "SITE")
+saveRDS(ssu_ps_pime_split$ALMR, "files/trepo/pime/rdata/ssu_ps_asv_pime_ALMR.rds")
+saveRDS(ssu_ps_pime_split$CRIS, "files/trepo/pime/rdata/ssu_ps_asv_pime_CRIS.rds")
+saveRDS(ssu_ps_pime_split$PAST, "files/trepo/pime/rdata/ssu_ps_asv_pime_PAST.rds")
+saveRDS(ssu_ps_pime_split$PUCL, "files/trepo/pime/rdata/ssu_ps_asv_pime_PUCL.rds")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_ps_pime_split
+```
+
+```{r, echo=FALSE}
+ssu_pime_preval.tax <- tax_table(ssu_ps_pime)
+write.table(ssu_pime_preval.tax,
+            file="files/trepo/pime/tables/ssu_asv_PIME_tax_table.txt",
+            sep = "\t", quote = FALSE)
+
+ssu_pime_preval.asv <- otu_table(t(ssu_ps_pime))
+write.table(ssu_pime_preval.asv,
+            file="files/trepo/pime/tables/ssu_asv_PIME_otu_table.txt",
+            sep = "\t", quote = FALSE)
+
+ssu_pime_preval.samp <- sample_data(ssu_ps_pime)
+write.table(ssu_pime_preval.samp,
+            file="files/trepo/pime/tables/ssu_asv_PIME_sample_data.txt",
+            sep = "\t", quote = FALSE)
+```
+
+## Create Ampvis2 PIME Object
+
+```{r}
+ssu_otu <- data.frame(t(otu_table(ssu_ps_pime)))
+ssu_otu[] <- lapply(ssu_otu, as.numeric)
+ssu_otu <- as.matrix(ssu_otu)
+ssu_tax <- as.matrix(data.frame(tax_table(ssu_ps_pime)))
+ssu_samples <- data.frame(sample_data(ssu_ps_pime))
+ssu_ps_amp <- merge_phyloseq(otu_table(ssu_otu, taxa_are_rows = TRUE),
+                          tax_table(ssu_tax, ssu_tax),
+                          sample_data(ssu_samples))
+```
+
+```{r}
+ssu_amp_asv_pime  <- data.frame(otu_table(ssu_ps_amp))
+ssu_amp_asv_pime <- ssu_amp_asv_pime %>% tibble::rownames_to_column("OTU")
+ssu_amp_tax_pime  <- data.frame(tax_table(ssu_ps_amp))
+ssu_amp_tax_pime <- ssu_amp_tax_pime %>% tibble::rownames_to_column("OTU")
+ssu_amp_tax_pime$ASV_SEQ <- NULL
+colnames(ssu_amp_tax_pime)[colnames(ssu_amp_tax_pime) == "ASV_ID"] <- "Species"
+ssu_amp_asv_tax_pime <- left_join(ssu_amp_asv_pime, ssu_amp_tax_pime, by = "OTU")
+ssu_samp_data_t <- data.frame(ssu_samp_data)
+#ssu_samp_data_t[,7:9] <- NULL
+ssu_amp_data_pime <- amp_load(ssu_amp_asv_tax_pime, metadata = ssu_samp_data_t)
+
+ssu_diversity_pime <-
+  amp_alphadiv(
+    ssu_amp_data_pime,
+    measure = "observed",
+    richness = FALSE)
+
+ssu_diversity_pime <-
+  ssu_diversity_pime %>%
+  dplyr::rename(
+    "total_reads" = "Reads",
+    "total_asvs" = "ObservedOTUs")
+
+ssu_diversity_pime$coverage = cut(ssu_diversity_pime$total_reads,
+                          c(0, 5000, 25000, 100000, 200000),
+                          labels = c(
+                            "low (< 5k)", "medium (5-25k)",
+                            "high (25-100k)", "extra_high (> 100k)"))
+ssu_diversity_pime <- ssu_diversity_pime[order(ssu_diversity_pime$SamName), ]
+ssu_amp_pime <- amp_load(ssu_amp_asv_tax_pime,
+                          metadata = ssu_diversity_pime, tree = ssu_ps_pime_tree)
+ssu_samp_pime <- ssu_diversity_pime
+ssu_samp_pime <- ssu_samp_pime %>% tibble::remove_rownames()
+```
+
+```{r, eval=TRUE, echo=FALSE}
+ssu_amp_pime
+```
+
+```{r}
+saveRDS(ssu_amp_pime, "files/trepo/pime/rdata/ssu_asv_amp_pime.rds")
+```
+
+## Summary
+
+Let's take a look at a table of sample information. Any header with the `_p` suffix is the *PIME filtered* data.
+
+<br/>
+
+```{r, echo=FALSE}
+## This is for table only
+ssu_dummy_tab <- ssu_samp_pime
+ssu_dummy_tab <- ssu_dummy_tab %>%
+  dplyr::rename("total_reads_p" = "total_reads") %>%
+  dplyr::rename("total_asvs_p" = "total_asvs")
+ssu_dummy_tab$coverage <- NULL
+#ssu_samp_data_tab <- dplyr::left_join(ssu_samp_data, ssu_dummy_tab)
+#ssu_samp_data_tab <- ssu_samp_data_tab[, c(1:7,13,8,14,9,15,10,16,11,17,12)]
+```
+
+```{r, echo=FALSE, layout="l-body-outset", eval=TRUE}
+## elementId https://www.random.org/strings/
+
+datatable(ssu_dummy_tab, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Sample summary table.
+            Use the buttons to navigate through the table or
+            download a copy.')),
+          elementId = "upipqr0laqwmhi8akm2x",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = c(5, 15)
+            )
+          ) %>%
+    DT::formatStyle(columns = colnames(ssu_dummy_tab),
+                    fontSize = '80%')
+```
+
+And here is how the data sets changed through the PIME filtering process.
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_ps_pime_ALMR <- ssu_ps_pime_split$ALMR
+ssu_ps_pime_CRIS <- ssu_ps_pime_split$CRIS
+ssu_ps_pime_PAST <- ssu_ps_pime_split$PAST
+ssu_ps_pime_PUCL <- ssu_ps_pime_split$PUCL
+
+tmp_objects <- data.frame(c("FULL data set", "Rarefied data", "PIME filtered data",
+                            "PIME (ALMR)", "PIME (CRIS)", "PIME (PAST)", "PIME (PUCL)"))
+tmp_samples <- c("ssu_ps_work", "ssu_pime_ds", "ssu_ps_pime",
+                 "ssu_ps_pime_ALMR", "ssu_ps_pime_CRIS", "ssu_ps_pime_PAST", "ssu_ps_pime_PUCL")
+
+tmp_no_samp <- c()
+for (i in tmp_samples) {
+   tmp_get <- nsamples(get(i))
+   tmp_no_samp <- c(append(tmp_no_samp, tmp_get))
+}
+tmp_no_samp <- data.frame(tmp_no_samp)
+
+tmp_rc <- c()
+for (i in tmp_samples) {
+   tmp_get <- sum(readcount(get(i)))
+   tmp_rc <- c(append(tmp_rc, tmp_get))
+}
+tmp_rc <- data.frame(tmp_rc)
+tmp_asv <- c()
+for (i in tmp_samples) {
+   tmp_get <- ntaxa(get(i))
+   tmp_asv <- c(append(tmp_asv, tmp_get))
+}
+tmp_asv <- data.frame(tmp_asv)
+
+ssu_asv_pime_sum <- dplyr::bind_cols(tmp_objects, tmp_samples) %>%
+                      dplyr::bind_cols(., tmp_no_samp) %>%
+                      dplyr::bind_cols(., tmp_rc) %>%
+                      dplyr::bind_cols(., tmp_asv) %>%
+  dplyr::rename("Description" = 1, "object name" = 2, "no. samples" = 3,
+                "total reads" = 4, "total asvs" = 5)
+rm(list = ls(pattern = "tmp_"))
+```
+
+<br/>
+
+```{r, echo=FALSE, layout="l-body-outset", eval=TRUE}
+knitr::kable(ssu_asv_pime_sum)
+```
+
+
+```{r, echo=FALSE}
+saveRDS(ssu_samp_pime, "files/trepo/pime/rdata/ssu_asv_samp_pime.rds")
+save.image("page_build/trepo/pime_ssu_asv_wf.rdata")
+objects()
+```
+
+```{r include=FALSE, eval=TRUE}
+gdata::keep(ssu_merge_asv_pime_sum, ssu_merge_otu_pime_sum, ssu_asv_pime_sum, sure = TRUE)
+```
+
+# All Samples (OTU Data)
+
+```{r, include=FALSE, eval=TRUE}
+## Load to build page only #3
+load("page_build/trepo/pime_ssu_otu_wf.rdata")
+```
+
+
+```{r, include=FALSE}
+## LOad only after workflow is complete #2
+remove(list = ls())
+load("files/trepo/pime/rdata/pime_ssu_otu_b4_rand.rdata")
+ssu_samp_data <- sample_data(ssu_ps_work_otu)
+tmp_ps_obj <- ssu_ps_work_otu
+objects()
+rm(list = ls(pattern = "ssu_ps_work"))
+ssu_ps_work_otu <- tmp_ps_obj
+rm(tmp_ps_obj)
+objects()
+```
+
+
+```{r, include=FALSE}
+## Initial Load for PIME  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+load("page_build/trepo/otu_wf.rdata")
+```
+
+We will use PIME (Prevalence Interval for Microbiome Evaluation) to create a filtered data set.
+
+## Setup
+
+First, choose a phyloseq object and a sample data frame
+
+```{r}
+ssu_pime_ds <- ssu_ps_work_otu
+ssu_which_pime <- "ssu_pime_ds"
+ssu_pime_ds@phy_tree <- NULL
+
+### USE THIS TO CREATE NEW SAMPLE VARIABLE FOR SPLITTING
+#tmp_samp_data <- sample_data(ssu_pime_ds)	
+#tmp_samp_data$YR_TREAT <- paste(tmp_samp_data$YEAR, tmp_samp_data$TREAT, sep="_")	
+#tmp_ps <- merge_phyloseq(ssu_pime_ds, tmp_samp_data)	
+#ssu_pime_ds <- tmp_ps	
+#rm(list = ls(pattern = "tmp_"))
+```
+
+```{r, echo=FALSE, eval=TRUE}
+tmp_ps <- ssu_ps_work_otu
+tmp_ps@phy_tree <- NULL
+tmp_ps
+```
+
+
+```{r}
+ssu_pime_sample_d <- data.frame(rowSums(otu_table(ssu_pime_ds)))
+ssu_pime_sample_d <- ssu_pime_sample_d %>% dplyr::rename(total_reads = 1)
+
+ssu_pime_ds <- rarefy_even_depth(ssu_pime_ds, 
+                                 sample.size = min(ssu_pime_sample_d$total_reads), 
+                                 trimOTUs = TRUE, replace = FALSE, rngseed = 119)
+ssu_pime_ds
+```
+
+
+```
+`set.seed(119)` was used to initialize repeatable random subsampling.
+Please record this for your records so others can reproduce.
+Try `set.seed(119); .Random.seed` for the full vector
+
+8456 OTUs were removed because they are no longer 
+present in any sample after random subsampling
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_pime_ds
+```
+
+The first step in PIME is to define if the microbial community presents a high relative abundance of taxa with low prevalence, which is considered as noise in PIME analysis. This is calculated by random forests analysis and is the baseline noise detection.
+
+```{r}
+ssu_pime.oob.error <- pime.oob.error(ssu_pime_ds, "SITE")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_pime.oob.error
+```
+
+## Split by Predictor Variable
+
+```{r}
+data.frame(sample_data(ssu_pime_ds))
+ssu_per_variable_obj <- pime.split.by.variable(ssu_pime_ds, "SITE")
+ssu_per_variable_obj
+```
+
+<details markdown="1">
+<summary>Detailed results for splitting by sample variables  </summary>
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_per_variable_obj
+```
+</details>
+
+## Calculate Prevalence Intervals
+
+Using the output of `pime.split.by.variable`, we calculate the prevalence intervals with the function `pime.prevalence`. This function estimates the highest prevalence possible (no empty ASV table), calculates prevalence for taxa, starting at 5 maximum prevalence possible (no empty ASV table or dropping samples). After prevalence calculation, each prevalence interval are merged.
+
+```{r}
+ssu_prevalences <- pime.prevalence(ssu_per_variable_obj)
+ssu_prevalences
+```
+
+<details markdown="1">
+<summary>Detailed results for all prevalences intervals  </summary>
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_prevalences
+```
+</details>
+
+## Calculate Best Prevalence
+
+Finally, we use the function `pime.best.prevalence` to calculate the best prevalence. The function uses randomForest to build random forests trees for samples classification and variable importance computation. It performs classifications for each prevalence interval returned by `pime.prevalence`. Variable importance is calculated, returning the Mean Decrease Accuracy (MDA), Mean Decrease Impurity (MDI), overall and by sample group, and taxonomy for each ASV. PIME keeps the top 30 variables with highest MDA each prevalence level.
+
+```{r}
+set.seed(1911)
+ssu_best.prev <- pime.best.prevalence(ssu_prevalences, "SITE")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_best.prev$`OOB error`
+```
+
+```{r}
+ssu_what_is_best <- ssu_best.prev$`OOB error`
+ssu_what_is_best[, c(2:4)] <- sapply(ssu_what_is_best[, c(2:4)], as.numeric)
+ssu_what_is_best <- ssu_what_is_best %>% 
+                          dplyr::rename("OOB_error_rate" = "OOB error rate (%)")
+ssu_what_is_best$Interval <- str_replace_all(ssu_what_is_best$Interval, "%", "")
+ssu_best <- with(ssu_what_is_best, Interval[which.min(OOB_error_rate)])
+ssu_best <- paste("`", ssu_best, "`", sep = "")
+ssu_prev_choice <- paste("ssu_best.prev$`Importance`$", ssu_best, sep = "")
+ssu_imp_best <- eval(parse(text = (ssu_prev_choice)))
+```
+
+Looks like the lowest OOB error rate (%) that retains the most ASVs is `r min(ssu_what_is_best$OOB_error_rate)`% from `r ssu_best`. We will use this interval.
+
+## Best Prevalence Summary
+
+```{r}
+#ssu_imp_best[, 13:14] <- list(NULL)
+ssu_imp_best[,(ncol(ssu_imp_best)-1):ncol(ssu_imp_best)] <- list(NULL)
+ssu_imp_best <- ssu_imp_best %>% dplyr::rename("ASV_ID" = "SequenceID")
+```
+
+</br>
+
+```{r, layout='l-body-outset', echo=FALSE, eval=TRUE}
+## elementId need to be unique https://www.random.org/strings/
+ssu_imp_best_t <- ssu_imp_best #%>%
+  #dplyr::rename("Control" = "X0", "Warm_3" = "X3", "Warm_8" = "X8")
+
+datatable(ssu_imp_best_t, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Table of ASVs (max 30)
+                                     from the chosen prevalence
+                                     interval.')),
+          elementId = "qx00m3t3ggbavcfsmwqw",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(ssu_imp_best_t), fontSize = '80%') %>%
+  DT::formatRound(columns = 2:7, digits = 4)
+```
+
+Now we need to create a phyloseq object of ASVs at this cutoff (`r ssu_best`).
+
+```{r}
+ssu_best_val <- str_replace_all(ssu_best, "Prevalence ", "")
+ssu_best_val <- paste("ssu_prevalences$", ssu_best_val, sep = "")
+ssu_prevalence_best <- eval(parse(text = (ssu_best_val)))
+saveRDS(ssu_prevalence_best, "rdata/trepo/ssu_otu_prevalence_best.rds")
+```
+
+And look at a summary of the data.
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_prevalence_best
+```
+
+```{r, echo=FALSE}
+ssu_min_read_ps <- min(readcount(ssu_prevalence_best))
+ssu_max_read_ps <- max(readcount(ssu_prevalence_best))
+ssu_total_reads_ps <- sum(readcount(ssu_prevalence_best))
+ssu_mean_reads_ps <- round(mean(readcount(ssu_prevalence_best)), digits = 0)
+ssu_median_reads_ps <- median(readcount(ssu_prevalence_best))
+ssu_total_otus_ps <- ntaxa(ssu_prevalence_best)
+ssu_singleton_ps <- tryCatch(ntaxa(rare(ssu_prevalence_best,
+                                    detection = 1, prevalence = 0)),
+                         error=function(err) NA)
+ssu_singleton_ps_perc <- tryCatch(round((100*(ntaxa(rare(ssu_prevalence_best,
+                                                     detection = 1,
+                                                     prevalence = 0)) / ntaxa(ps))),
+                                    digits = 3),
+                              error=function(err) NA)
+ssu_sparsity_ps <- round(length(which(
+  abundances(ssu_prevalence_best) == 0))/length(abundances(ssu_prevalence_best)),
+  digits = 3)
+```
+
+| Metric                              | Results                         |
+|-------------------------------------|---------------------------------|
+| Min. number of reads                | `r ssu_min_read_ps`           |
+| Max. number of reads                | `r ssu_max_read_ps`           |
+| Total number of reads               | `r ssu_total_reads_ps`        |
+| Average number of reads             | `r ssu_mean_reads_ps`         |
+| Mean number of reads                | `r ssu_mean_reads_ps`         |
+| Median number of reads              | `r ssu_median_reads_ps`       |
+| Total ASVS                          | `r ssu_total_otus_ps`         |
+| Sparsity                            | `r ssu_sparsity_ps`           |
+
+
+## Estimate Error in Prediction
+
+Using  the function `pime.error.prediction` we can estimate the error in prediction. For each prevalence interval, this function randomizes the samples labels into arbitrary groupings using `n` random permutations, defined by the `bootstrap` value. For each, randomized and prevalence filtered, data set the OOB error rate is calculated to estimate whether the original differences in groups of samples occur by chance. Results are in a list containing a table and a box plot summarizing the results.
+
+```{r}
+ssu_randomized <- pime.error.prediction(ssu_pime_ds, "TEMP",
+                                          bootstrap = 100, parallel = TRUE,
+                                          max.prev = 95)
+```
+
+<br/>
+
+```{r, echo=FALSE}
+ssu_oob_error <- ssu_randomized$`Results table`
+```
+
+```{r, echo=FALSE, layout='l-body', echo=FALSE, eval=FALSE}
+datatable(ssu_oob_error, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Table of ASV from the chosen
+                                     prevalence interval.')),
+          elementId = "5bdawfcf4stykgrpb911",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = list(c(5, 10, -1), c("5", "10", "All"))
+            )
+          ) %>%
+  DT::formatStyle(columns = colnames(ssu_oob_error), fontSize = '80%') %>%
+  DT::formatRound(columns = 1:20, digits = 4)
+```
+
+```{r, echo=FALSE}
+ssu_randomized$Plot
+```
+
+It is also possible to estimate the variation of OOB error for each prevalence interval filtering. This is done by running the random forests classification for `n` times, determined by the `bootstrap` value. The function will return a box plot figure and a table for each classification error.
+
+```{r}
+ssu_replicated.oob.error <- pime.oob.replicate(ssu_prevalences, "SITE", 
+                                               bootstrap = 100, parallel = FALSE)
+```
+
+```{r, echo=FALSE, eval=TRUE, fig.height=5}
+# UNCOMMENT WHEN RAND DONE
+ssu_obb_orig <- ssu_replicated.oob.error$Plot
+#ssu_obb_rand <- ssu_randomized$Plot
+
+ssu_obb_orig <- ssu_obb_orig +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank()) +
+  labs(title = "OOB error Original data set")
+
+#ssu_obb_rand <- ssu_obb_rand  +
+#  labs(title = "OOB error Randomized data set")
+
+ssu_obb_orig #/ ssu_obb_rand
+```
+
+To obtain the confusion matrix from random forests classification use the following:
+
+```{r}
+ssu_prev_confuse <- paste("ssu_best.prev$`Confusion`$", ssu_best, sep = "")
+eval(parse(text = (ssu_prev_confuse)))
+```
+
+## Save Phyloseq PIME objects
+
+```{r}
+ssu_ps_pime <- ssu_prevalence_best
+ssu_ps_pime_tree <- rtree(ntaxa(ssu_ps_pime), rooted = TRUE,
+                           tip.label = taxa_names(ssu_ps_pime))
+ssu_ps_pime <- merge_phyloseq(ssu_ps_pime,
+                               sample_data,
+                               ssu_ps_pime_tree)
+saveRDS(ssu_ps_pime, "files/trepo/pime/rdata/ssu_ps_otu_pime.rds")
+```
+
+### Split & save by predictor variable
+
+```{r}
+ssu_ps_pime_split <- pime.split.by.variable(ssu_ps_pime, "SITE")
+saveRDS(ssu_ps_pime_split$ALMR, "files/trepo/pime/rdata/ssu_ps_otu_pime_ALMR.rds")
+saveRDS(ssu_ps_pime_split$CRIS, "files/trepo/pime/rdata/ssu_ps_otu_pime_CRIS.rds")
+saveRDS(ssu_ps_pime_split$PAST, "files/trepo/pime/rdata/ssu_ps_otu_pime_PAST.rds")
+saveRDS(ssu_ps_pime_split$PUCL, "files/trepo/pime/rdata/ssu_ps_otu_pime_PUCL.rds")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_ps_pime_split
+```
+
+```{r, echo=FALSE}
+ssu_pime_preval.tax <- tax_table(ssu_ps_pime)
+write.table(ssu_pime_preval.tax,
+            file="files/trepo/pime/tables/ssu_otu_PIME_tax_table.txt",
+            sep = "\t", quote = FALSE)
+
+ssu_pime_preval.otu <- otu_table(t(ssu_ps_pime))
+write.table(ssu_pime_preval.otu,
+            file="files/trepo/pime/tables/ssu_otu_PIME_otu_table.txt",
+            sep = "\t", quote = FALSE)
+
+ssu_pime_preval.samp <- sample_data(ssu_ps_pime)
+write.table(ssu_pime_preval.samp,
+            file="files/trepo/pime/tables/ssu_otu_PIME_sample_data.txt",
+            sep = "\t", quote = FALSE)
+```
+
+## Create Ampvis2 PIME Object
+
+```{r}
+ssu_otu <- data.frame(t(otu_table(ssu_ps_pime)))
+ssu_otu[] <- lapply(ssu_otu, as.numeric)
+ssu_otu <- as.matrix(ssu_otu)
+ssu_tax <- as.matrix(data.frame(tax_table(ssu_ps_pime)))
+ssu_samples <- data.frame(sample_data(ssu_ps_pime))
+ssu_ps_amp <- merge_phyloseq(otu_table(ssu_otu, taxa_are_rows = TRUE),
+                          tax_table(ssu_tax, ssu_tax),
+                          sample_data(ssu_samples))
+```
+
+```{r}
+ssu_amp_otu_pime  <- data.frame(otu_table(ssu_ps_amp))
+ssu_amp_otu_pime <- ssu_amp_otu_pime %>% tibble::rownames_to_column("OTU")
+ssu_amp_tax_pime  <- data.frame(tax_table(ssu_ps_amp))
+ssu_amp_tax_pime <- ssu_amp_tax_pime %>% tibble::rownames_to_column("OTU")
+ssu_amp_tax_pime$ASV_SEQ <- NULL
+
+## THE NEXT  COMMAND SHOULD BE REMOVED, THIS IS A TEMP FIX
+## BECAUSE OTU_ID'S not INCLUDED FROM OTU WF
+ssu_amp_tax_pime$ASV_ID <- ssu_amp_tax_pime$OTU
+#########
+colnames(ssu_amp_tax_pime)[colnames(ssu_amp_tax_pime) == "ASV_ID"] <- "Species"
+ssu_amp_otu_tax_pime <- left_join(ssu_amp_otu_pime, ssu_amp_tax_pime, by = "OTU")
+ssu_samp_data_t <- data.frame(ssu_samp_data)
+#ssu_samp_data_t[,7:9] <- NULL
+ssu_amp_data_pime <- amp_load(ssu_amp_otu_tax_pime, metadata = ssu_samp_data_t)
+
+ssu_diversity_pime <-
+  amp_alphadiv(
+    ssu_amp_data_pime,
+    measure = "observed",
+    richness = FALSE)
+
+ssu_diversity_pime <-
+  ssu_diversity_pime %>%
+  dplyr::rename(
+    "total_reads" = "Reads",
+    "total_otus" = "ObservedOTUs")
+
+ssu_diversity_pime$coverage = cut(ssu_diversity_pime$total_reads,
+                          c(0, 5000, 25000, 100000, 200000),
+                          labels = c(
+                            "low (< 5k)", "medium (5-25k)",
+                            "high (25-100k)", "extra_high (> 100k)"))
+ssu_diversity_pime <- ssu_diversity_pime[order(ssu_diversity_pime$SamName), ]
+ssu_amp_pime <- amp_load(ssu_amp_otu_tax_pime,
+                          metadata = ssu_diversity_pime, tree = ssu_ps_pime_tree)
+ssu_samp_pime <- ssu_diversity_pime
+ssu_samp_pime <- ssu_samp_pime %>% tibble::remove_rownames()
+```
+
+```{r, eval=TRUE, echo=FALSE}
+ssu_amp_pime
+```
+
+```{r}
+saveRDS(ssu_amp_pime, "files/trepo/pime/rdata/ssu_otu_amp_pime.rds")
+```
+
+## Summary
+
+Let's take a look at a table of sample information. Any header with the `_p` suffix is the *PIME filtered* data.
+
+<br/>
+
+```{r, echo=FALSE}
+## This is for table only
+ssu_dummy_tab <- ssu_samp_pime
+ssu_dummy_tab <- ssu_dummy_tab %>%
+  dplyr::rename("total_reads_p" = "total_reads") %>%
+  dplyr::rename("total_otus_p" = "total_otus")
+ssu_dummy_tab$coverage <- NULL
+#ssu_samp_data_tab <- dplyr::left_join(ssu_samp_data, ssu_dummy_tab)
+#ssu_samp_data_tab <- ssu_samp_data_tab[, c(1:7,13,8,14,9,15,10,16,11,17,12)]
+```
+
+```{r, echo=FALSE, layout="l-body-outset", eval=TRUE}
+## elementId https://www.random.org/strings/
+
+datatable(ssu_dummy_tab, width = "100%", escape = FALSE,
+          rownames = FALSE, filter = 'top',
+          caption = htmltools::tags$caption(
+            style = 'caption-side: bottom; text-align: left;',
+            'Table: ', htmltools::em('Sample summary table.
+            Use the buttons to navigate through the table or
+            download a copy.')),
+          elementId = "kekt3855pmbio224m21n",
+          extensions = 'Buttons', options = list(
+            scrollX = TRUE,
+            dom = 'Blfrtip',
+            buttons = c('copy', 'csv', 'excel'),
+            pageLength = 5,
+            lengthMenu = c(5, 15)
+            )
+          ) %>%
+    DT::formatStyle(columns = colnames(ssu_dummy_tab),
+                    fontSize = '80%')
+```
+
+And here is how the data sets changed through the PIME filtering process.
+
+```{r, echo=FALSE, eval=TRUE}
+ssu_ps_pime_ALMR <- ssu_ps_pime_split$ALMR
+ssu_ps_pime_CRIS <- ssu_ps_pime_split$CRIS
+ssu_ps_pime_PAST <- ssu_ps_pime_split$PAST
+ssu_ps_pime_PUCL <- ssu_ps_pime_split$PUCL
+
+tmp_objects <- data.frame(c("FULL data set", "Rarefied data", "PIME filtered data",
+                            "PIME (ALMR)", "PIME (CRIS)", "PIME (PAST)", "PIME (PUCL)"))
+tmp_samples <- c("ssu_ps_work_otu", "ssu_pime_ds", "ssu_ps_pime",
+                 "ssu_ps_pime_ALMR", "ssu_ps_pime_CRIS", "ssu_ps_pime_PAST", "ssu_ps_pime_PUCL")
+tmp_no_samp <- c()
+for (i in tmp_samples) {
+   tmp_get <- nsamples(get(i))
+   tmp_no_samp <- c(append(tmp_no_samp, tmp_get))
+}
+tmp_no_samp <- data.frame(tmp_no_samp)
+
+tmp_rc <- c()
+for (i in tmp_samples) {
+   tmp_get <- sum(readcount(get(i)))
+   tmp_rc <- c(append(tmp_rc, tmp_get))
+}
+tmp_rc <- data.frame(tmp_rc)
+tmp_otu <- c()
+for (i in tmp_samples) {
+   tmp_get <- ntaxa(get(i))
+   tmp_otu <- c(append(tmp_otu, tmp_get))
+}
+tmp_otu <- data.frame(tmp_otu)
+
+ssu_otu_pime_sum <- dplyr::bind_cols(tmp_objects, tmp_samples) %>%
+                      dplyr::bind_cols(., tmp_no_samp) %>%
+                      dplyr::bind_cols(., tmp_rc) %>%
+                      dplyr::bind_cols(., tmp_otu) %>%
+  dplyr::rename("Description" = 1, "object name" = 2, "no. samples" = 3,
+                "total reads" = 4, "total otus" = 5)
+rm(list = ls(pattern = "tmp_"))
+```
+
+<br/>
+
+```{r, echo=FALSE, layout="l-body-outset", eval=TRUE}
+knitr::kable(ssu_otu_pime_sum)
+```
+
+
+```{r, echo=FALSE}
+saveRDS(ssu_samp_pime, "files/trepo/pime/rdata/ssu_otu_samp_pime.rds")
+save.image("page_build/trepo/pime_ssu_otu_wf.rdata")
+```
+
+```{r include=FALSE, eval=TRUE}
+gdata::keep(ssu_merge_asv_pime_sum, ssu_merge_otu_pime_sum, ssu_asv_pime_sum, ssu_otu_pime_sum, sure = TRUE)
+```
+
+```{r include=FALSE}
+gdata::keep(ssu_merge_asv_pime_sum, ssu_merge_otu_pime_sum, ssu_asv_pime_sum, ssu_otu_pime_sum, sure = TRUE)
+save.image("page_build/trepo/pime-summary_trepo_pime_wf.rdata")
+```
+
+```{r, echo=FALSE, eval=TRUE}
+remove(list = ls())
+```
+
+##  Source Code {.appendix}
+
+The source code for this page can be accessed on GitHub by [clicking this link](https://github.com/tropical-repo/web/blob/master/trepo-pime.Rmd). Please note, that in order to process the data *and*  build the website, we needed to run the workflow and get the results. Then hard code the results and turn off the individual commands. So the raw file for this page is a bit messy---you have been warned.

@@ -1,0 +1,57 @@
+name: "tropical-repo"
+title: "TropicalRepo"
+favicon: assets/favicon.ico
+base_url: https://tropical-repo.github.io
+repository_url: https://github.com/tropical-repo/web/
+creative_commons: CC BY
+output_dir: "public_build"
+exclude: ["public", "working", "README.html", "README.md", "hack_code", "page_build", "files", "UNPOOLED", "MiSeq_SOP"]
+navbar:
+  logo:
+    image: assets/icon.png
+    href: index.html
+  search: true
+  source_url: true
+  right:
+    - text: "Introduction"
+      href: intro.html
+    - text: "Physical"
+      href: temp.html
+    - text: "Inverts"
+      href: temp.html
+    - text: "Microbial"
+      menu:
+        - text: "Diversity Workflows"
+        - text: "---------"
+        - text: "9. Metadata"
+          href: trepo-metadata.html
+        - text: "8. DA ASVs & OTUs"
+          href: trepo-da.html
+        - text: "7. Beta Diversity"
+          href: trepo-beta.html
+        - text: "6. Alpha Diversity"
+          href: trepo-alpha.html
+        - text: "5. Taxonomic"
+          href: trepo-taxa.html
+        - text: "---------"
+        - text: "Processing Workflows"
+        - text: "4. PIME"
+          href: trepo-pime.html
+        - text: "3. OTU Clustering"
+          href: trepo-otu.html
+        - text: "2. Data Set Prep"
+          href: trepo-data-prep.html
+        - text: "1. DADA2"
+          href: trepo-dada2.html
+        - text: "---------"
+    - text: "Data"
+      href: temp.html
+output:
+    distill::distill_article:
+      highlight_downlit: false
+      highlight: haddock
+      css: assets/styles.css
+      toc: true
+      toc_depth: 2
+      toc_float: true
+compare_updates_url: https://github.com/tropical-repo/web/compare/pubv1...master

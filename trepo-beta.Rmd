@@ -1,0 +1,2112 @@
+---
+title: "7 Beta Diversity & Dispersion Estimates"
+description: |
+  Reproducible workflow for ... In this workflow, ....
+author:
+#  - name: Jarrod J Scott
+#    url: https://example.com/norajones
+#    affiliation: Spacely Sprockets
+#    affiliation_nrl: https://example.com/spacelysprokets
+bibliography: assets/cite.bib
+output:
+    distill::distill_article:
+      css: assets/styles.css
+      toc: true
+      toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+set.seed(119)
+#library(conflicted)
+library(phyloseq); packageVersion("phyloseq")
+library(DT)
+library(Biostrings); packageVersion("Biostrings")
+#library(microbiome)
+library(tidyverse)
+library(data.table)
+library(plyr)
+require(gdata)
+library(labdsv)
+library(reshape)
+library(naniar)
+library(tibble)
+library(vegan)
+library(agricolae)
+library(patchwork)
+library(ampvis2)
+library(codefolder)
+library(pairwiseAdonis)
+library(microbiome)
+library(cowplot)
+library(DESeq2)
+library(ape)
+library(hilldiv)
+library(phytools)
+library(phangorn)
+library(ggpubr)
+library(patchwork)
+
+options(scipen=999)
+knitr::opts_current$get(c(
+  "cache",
+  "cache.path",
+  "cache.rebuild",
+  "dependson",
+  "autodep"
+))
+```
+
+> Hit the *Hide Code* button to hide the R code.
+
+<aside>
+```{r codefolder_ssu, echo=FALSE, results='asis', eval=TRUE}
+codefolder::generic(init = "show", query = "pre.sourceCode",
+  style = "position: absolute; right: 14%; z-index: 200")
+```
+</aside>
+
+# Synopsis
+
+This workflow contains beta diversity assessments. In order to run the workflow, you either need to first run the  [DADA2 Workflow](trepo-dada2.html) **and** the [Data Preparation workflow](trepo-data-prep.html) **or** begin with the output files from the Data Preparation workflow. See the [Data Availability](data-availability.html) page for complete details.
+
+In this workflow...
+
+# Full Data Set 
+
+```{r include=FALSE, eval=TRUE}
+## Load to build page only #2
+remove(list = ls())
+load("page_build/trepo/beta_ssu_full_part_1_wf.rdata")
+```
+
+```{r include=FALSE}
+## Initial Load for  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+ssu_ps_work <- readRDS("files/trepo/alpha/rdata/ssu_ps_work.rds")
+ssu_ps_pime <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime.rds")
+ssu_hill_hier <- readRDS("files/trepo/alpha/rdata/ssu_hill_hier.rds")
+ssu_ps_pime_tree_ult <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime_tree_ult.rds")
+objects()
+```
+
+
+```{r, echo=FALSE}
+swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
+```
+
+## Significance Tests
+
+In order to test for significance between sample groups, we must perform the following steps:
+
+1. Create distance matrices based on the metrics above (`wunifrac`, `unifrac`, `jsd`). For this we use the function `phyloseq::distance`.
+2. Next, calculate beta dispersion using the `betadisper` function from the `vegan` package.
+3. Then, use the function `permutest` to run a Permutation test for homogeneity of multivariate dispersions.
+4. If the beta dispersion tests are not significant we will run a PERMANOVA (since PERMANOVA assumes equal dispersion), otherwise we will use Analysis of Similarity (ANOSIM).
+
+Steps 1, 2, and 3 are analyzed in a `for` loop that tests all three distance metrics.
+
+Before we begin, we must first transform sample counts to relative abundance for both data sets.
+
+```{r}
+samp_ps <- c("ssu_ps_work", "ssu_ps_pime")
+for (i in samp_ps) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_prop"))
+     tmp_get <- get(i)
+     tmp_ps <- transform_sample_counts(tmp_get, function(otu) otu/sum(otu))
+     tmp_ps@phy_tree <- NULL
+     tmp_ps <- prune_samples(sample_sums(tmp_ps) > 0, tmp_ps)
+     tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE, tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+
+### Beta Dispersion
+
+```{r}
+dist <- c("jsd", "unifrac", "wunifrac")
+for (i in samp_ps) {
+        for (d in dist){
+             tmp_get <- get(purrr::map_chr(i, ~ paste0(i, "_prop")))
+             tmp_samp <- data.frame(sample_data(tmp_get))
+             tmp_df <- phyloseq::distance(tmp_get, method = d)
+             tmp_df_name <- purrr::map_chr(d, ~ paste0(i, "_beta_dist_", .))
+             assign(tmp_df_name, tmp_df)
+             tmp_df2 <- betadisper(tmp_df, tmp_samp$SITE, bias.adjust = TRUE)
+             tmp_df_name2 <- purrr::map_chr(d, ~ paste0(i, "_beta_dispersion_", .))
+             assign(tmp_df_name2, tmp_df2)
+             tmp_df3 <- permutest(tmp_df2, pairwise = TRUE,
+                                  permutations = 1000, binary = FALSE)
+             tmp_df_name3 <- purrr::map_chr(d, ~ paste0(i, "_permutest_", .))
+             assign(tmp_df_name3, tmp_df3)
+             rm(list = ls(pattern = "tmp_"))
+       }
+}
+objects()
+```
+
+
+<details markdown="1">
+<summary>Detailed results of Beta Dispersion & Permutation tests</summary>
+
+##### Permutation tests (ASV)
+
+```{r, eval=TRUE, echo=FALSE}
+samp_ps_asv <- c("ssu_ps_work", "ssu_ps_pime")
+dist <- c("jsd", "unifrac", "wunifrac")
+for (i in samp_ps_asv) {
+  cat("\n", "           *****", i, "*****", "\n")
+        for (d in dist){
+          tmp_get <- get(purrr::map_chr(i, ~ paste0(i, "_permutest_", d)))
+          cat("\n")
+          cat("####################################################", "\n")
+          tmp_print <- c("BETA DISPERSION significance test", d, "distance")
+          cat(tmp_print, "\n")
+          cat("####################################################")
+          cat("\n")
+          print(tmp_get)
+          rm(list = ls(pattern = "tmp_"))
+        }
+}
+```
+</details>
+
+Remember, if the beta dispersion p-value is greater than `0.05` we use PERMANOVA, otherwise we use ANOSIM.
+
+```{r}
+file.remove("files/trepo/beta/tables/tmp.txt")
+for (i in samp_ps) {
+        for (d in dist){
+          tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_permutest_", d)))
+          tmp_res <- eval(isTRUE(tmp_get$tab$`Pr(>F)`[1] < 0.05))
+          tmp_print <- c("Permutation test p-value of  ", i, d,
+          " < 0.05?", tmp_res)
+          cat(tmp_print,"\n", append = TRUE, file = "files/trepo/beta/tables/tmp.txt")
+          rm(list = ls(pattern = "tmp_"))
+        }
+}
+ssu_perm_pvalues <- read_delim("files/trepo/beta/tables/tmp.txt", delim = "\n", col_names = "permutation results")
+```
+
+```{r, echo=FALSE}
+## Make samp dfs
+for (i in samp_ps) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_sampledf"))
+     tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_prop")))
+     tmp_samp <- data.frame(sample_data(tmp_get))
+     assign(tmp_name, tmp_samp)
+     rm(list = ls(pattern = "tmp_"))
+}
+objects(pattern="_sampledf")
+```
+
+### Significance Tests (ALL ASVs)
+
+```{r, echo=FALSE, eval=TRUE}
+adonis_sampledf <- ssu_ps_work_sampledf
+anosim_data <- ssu_ps_work
+print(ssu_perm_pvalues[1:3,])
+```
+
+```{r}
+ssu_ps_work_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_work_anosim_jsd <-
+  anosim(phyloseq::distance(ssu_ps_work_prop, "jsd"),
+         grouping = ssu_ps_work_groups)
+```
+
+```{r}
+ssu_ps_work_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_work_anosim_unifrac <-
+  anosim(phyloseq::distance(ssu_ps_work_prop, "unifrac"),
+         grouping = ssu_ps_work_groups)
+```
+
+```{r}
+ssu_ps_work_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_work_anosim_wunifrac <-
+  anosim(phyloseq::distance(ssu_ps_work_prop, "wunifrac"),
+         grouping = ssu_ps_work_groups)
+```
+
+<details markdown="1">
+<summary>Detailed results of Significance tests for the ALL ASV data set</summary>
+
+```{r, eval=TRUE, echo=FALSE}
+cat("\n", "***ANOSIM for Jensen-Shannon Divergence, `jsd`***", "\n\n")
+summary(ssu_ps_work_anosim_jsd)
+cat("\n")
+
+cat("\n", "***ANOSIM for Unweighted UniFrac distance, `unifrac`***", "\n\n")
+summary(ssu_ps_work_anosim_unifrac)
+cat("\n")
+
+cat("\n", "***ANOSIM for Weighted-UniFrac distance, `wunifrac`***", "\n\n")
+summary(ssu_ps_work_anosim_wunifrac)
+cat("\n")
+```
+</details>
+
+### Significance Tests (PIME ASVs)
+
+```{r, echo=FALSE, eval=TRUE}
+adonis_sampledf <- ssu_ps_pime_sampledf
+anosim_data <- ssu_ps_pime
+print(ssu_perm_pvalues[4:6,])
+```
+
+```{r}
+ssu_ps_pime_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_pime_anosim_jsd <-
+  anosim(phyloseq::distance(ssu_ps_pime_prop, "jsd"),
+         grouping = ssu_ps_pime_groups)
+```
+
+```{r}
+ssu_ps_pime_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_pime_anosim_unifrac <-
+  anosim(phyloseq::distance(ssu_ps_pime_prop, "unifrac"),
+         grouping = ssu_ps_pime_groups)
+```
+
+```{r}
+ssu_ps_pime_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_pime_anosim_wunifrac <-
+  anosim(phyloseq::distance(ssu_ps_pime_prop, "wunifrac"),
+         grouping = ssu_ps_pime_groups)
+```
+
+<details markdown="1">
+<summary>Detailed results of Significance tests for PIME data set</summary>
+
+```{r, eval=TRUE, echo=FALSE}
+cat("\n", "***ANOSIM for Jensen-Shannon Divergence, `jsd`***", "\n\n")
+summary(ssu_ps_pime_anosim_jsd)
+cat("\n")
+
+cat("\n", "***ANOSIM for Unweighted UniFrac distance, `unifrac`***", "\n\n")
+summary(ssu_ps_pime_anosim_unifrac)
+cat("\n")
+
+cat("\n", "***ANOSIM for Weighted-UniFrac distance, `wunifrac`***", "\n\n")
+summary(ssu_ps_pime_anosim_wunifrac)
+cat("\n")
+```
+</details>
+
+### Summary
+
+Here is a quick summary of significance tests for the FULL and PIME ASV data sets against the three distance matrices.
+
+```{r, echo=FALSE}
+data_set <- data.frame(c("ALL", "PIME"))
+dist_metric <- data.frame(c("Jensen-Shannon Divergence", "unweighted UniFrac", "weighted UniFrac"))
+
+tmp_p_value_full <- data.frame(c(ssu_ps_work_anosim_jsd$signif,
+                           ssu_ps_work_anosim_unifrac$signif,
+                           ssu_ps_work_anosim_wunifrac$signif))
+
+tmp_p_value_pime <- data.frame(c(ssu_ps_pime_anosim_jsd$signif,
+                                 ssu_ps_pime_anosim_unifrac$signif,
+                                 ssu_ps_pime_anosim_wunifrac$signif))
+
+ssu_tab_sig_test <- dplyr::bind_cols(dist_metric, tmp_p_value_full) %>%
+                     dplyr::bind_cols(., tmp_p_value_pime) %>%
+  dplyr::rename("distance metric" = 1, "p-value (ALL)" = 2, "p-value (PIME)" = 3)
+rm(list = ls(pattern = "tmp_"))
+```
+
+```{r, echo=FALSE, eval=TRUE}
+knitr::kable(ssu_tab_sig_test)
+```
+*Summary of significant tests for the ALL ASVs and PIME ASVs data sets.*
+
+```{r echo=FALSE}
+save.image("page_build/trepo/beta_ssu_full_part_1_wf.rdata")
+gdata::keep(ssu_ps_work, ssu_ps_pime, 
+            ssu_ps_work_prop, ssu_ps_pime_prop,
+            swel_col, sure = TRUE)
+objects()
+```
+
+
+## Beta Diversity Plots
+
+```{r echo=FALSE, eval=FALSE}
+load("page_build/trepo/beta_ssu_full_part_2_wf.rdata")
+```
+
+Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among sample.
+
+### Plots ALL ASVs
+
+First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
+
+```{r}
+samp_ps <- "ssu_ps_work"
+dist <- c("wunifrac", "unifrac", "jsd")
+for (d in dist){
+     tmp_name <- purrr::map_chr(d, ~ paste0(samp_ps, "_dist_", .))
+     tmp_name_plot <- purrr::map_chr(d, ~ paste0(samp_ps, "_dist_", ., "_plot"))
+     tmp_get <- get(purrr::map_chr(samp_ps, ~ paste0(., "_prop")))
+     ord_meths <- c("NMDS", "PCoA", "CCA", "DCA") #    MDS = PCoA, "CCA", "DCA", "DPCoA", "RDA"
+     tmp_plist_name <- purrr::map_chr(d, ~ paste0(samp_ps, "_", ., "_plist"))
+     tmp_plist <- llply(as.list(ord_meths), function(i, physeq, d) {
+        ordi = ordinate(physeq, method = i, distance = d)
+        plot_ordination(physeq, ordi, "samples", color = "SITE")
+   }, tmp_get, d)
+
+  names(tmp_plist) <- ord_meths
+
+  tmp_df <- ldply(tmp_plist, function(x){
+      df = x$data[, 1:2]
+      colnames(df) = c("Axis_1", "Axis_2")
+      return(cbind(df, x$data))})
+  names(tmp_df)[1] = "method"
+  
+  ## NEXT  LINE REORDER FACTORS
+  tmp_df$SITE <- factor(tmp_df$SITE, levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+  tmp_plot <- ggplot(tmp_df, aes(Axis_1, Axis_2,
+                                 color = SITE, shape = SEASON, fill = SITE))
+  tmp_plot <- tmp_plot + geom_point(size = 2)
+  tmp_plot <- tmp_plot + facet_wrap(~method, scales = "free")
+  tmp_plot <- tmp_plot + scale_colour_manual(values = swel_col)
+  assign(tmp_plist_name, tmp_plist)
+  assign(tmp_name, tmp_df)
+  assign(tmp_name_plot, tmp_plot)
+  rm(list = ls(pattern = "tmp_"))
+}
+
+objects(pattern = "_dist_")
+objects()
+```
+
+```{r}
+samp_ps <- "ssu_ps_work"
+plist_name <- objects(pattern="_plist")
+plot_num <- c(1,2)
+for (i in plist_name) {
+  for (j in plot_num) {
+       tmp_get_i <- get(i)
+     ## NEXT  LINE REORDER FACTORS
+       tmp_get_i[[j]]$data$SITE <- factor(tmp_get_i[[j]]$data$SITE, 
+                                          levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+       tmp_ord <- names(tmp_get_i)[j]
+       tmp_name <- stringr::str_replace(i, "plist", tmp_ord)
+       tmp_plot <- tmp_get_i[[j]] + scale_colour_manual(values = swel_col)
+       tmp_plot <- tmp_plot + geom_point(size = 4, aes(shape = SEASON)) +
+         theme(legend.position = "bottom")
+       tmp_plot$labels$shape <- "SEASON"
+       assign(tmp_name, tmp_plot)
+       rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_plots <-  (ssu_ps_work_jsd_NMDS + ssu_ps_work_unifrac_NMDS + ssu_ps_work_wunifrac_NMDS) /
+                        (ssu_ps_work_jsd_PCoA + ssu_ps_work_unifrac_PCoA + ssu_ps_work_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_plots <-  ssu_ps_work_plots +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_plots
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_plots
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_plots
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_beta_div_ord_plots.png")
+```
+
+### Plots ALL PIME ASV
+
+Same as above, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements.
+
+```{r}
+samp_ps <- "ssu_ps_pime"
+dist <- c("wunifrac", "unifrac", "jsd")
+for (d in dist){
+     tmp_name <- purrr::map_chr(d, ~ paste0(samp_ps, "_dist_", .))
+     tmp_name_plot <- purrr::map_chr(d, ~ paste0(samp_ps, "_dist_", ., "_plot"))
+     tmp_get <- get(purrr::map_chr(samp_ps, ~ paste0(., "_prop")))
+     ord_meths <- c("NMDS", "PCoA", "CCA", "DCA") #    MDS = PCoA, "CCA", "DCA", "DPCoA", "RDA"
+     tmp_plist_name <- purrr::map_chr(d, ~ paste0(samp_ps, "_", ., "_plist"))
+     tmp_plist <- llply(as.list(ord_meths), function(i, physeq, d) {
+        ordi = ordinate(physeq, method = i, distance = d)
+        plot_ordination(physeq, ordi, "samples", color = "SITE")
+   }, tmp_get, d)
+
+  names(tmp_plist) <- ord_meths
+
+  tmp_df <- ldply(tmp_plist, function(x){
+      df = x$data[, 1:2]
+      colnames(df) = c("Axis_1", "Axis_2")
+      return(cbind(df, x$data))})
+  names(tmp_df)[1] = "method"
+  
+  ## NEXT  LINE REORDER FACTORS
+  tmp_df$SITE <- factor(tmp_df$SITE, levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+  tmp_plot <- ggplot(tmp_df, aes(Axis_1, Axis_2,
+                                 color = SITE, shape = SEASON, fill = SITE))
+  tmp_plot <- tmp_plot + geom_point(size = 2)
+  tmp_plot <- tmp_plot + facet_wrap(~method, scales = "free")
+  tmp_plot <- tmp_plot + scale_colour_manual(values = swel_col)
+  assign(tmp_plist_name, tmp_plist)
+  assign(tmp_name, tmp_df)
+  assign(tmp_name_plot, tmp_plot)
+  rm(list = ls(pattern = "tmp_"))
+}
+
+```
+
+```{r}
+samp_ps <- "ssu_ps_pime"
+plist_name <- objects(pattern="_plist")
+plot_num <- c(1,2)
+for (i in plist_name) {
+  for (j in plot_num) {
+       tmp_get_i <- get(i)
+     ## NEXT  LINE REORDER FACTORS
+       tmp_get_i[[j]]$data$SITE <- factor(tmp_get_i[[j]]$data$SITE, 
+                                          levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+       tmp_ord <- names(tmp_get_i)[j]
+       tmp_name <- stringr::str_replace(i, "plist", tmp_ord)
+       tmp_plot <- tmp_get_i[[j]] + scale_colour_manual(values = swel_col)
+       tmp_plot <- tmp_plot + geom_point(size = 4, aes(shape = SEASON)) +
+         theme(legend.position = "bottom")
+       tmp_plot$labels$shape <- "SEASON"
+       assign(tmp_name, tmp_plot)
+       rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots <-  (ssu_ps_pime_jsd_NMDS + ssu_ps_pime_unifrac_NMDS + ssu_ps_pime_wunifrac_NMDS) /
+                        (ssu_ps_pime_jsd_PCoA + ssu_ps_pime_unifrac_PCoA + ssu_ps_pime_wunifrac_PCoA) +
+  geom_point(size = 1)
+ssu_ps_pime_plots <-  ssu_ps_pime_plots +
+  plot_annotation(
+    title = 'ALL ASVs PIME Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+```
+
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_plots
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_plots
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_beta_div_ord_plots.png")
+```
+
+
+```{r echo=FALSE}
+objects()
+rm(ssu_ps_work, ssu_ps_pime, ssu_ps_work_prop, ssu_ps_pime_prop)
+save.image("page_build/trepo/beta_ssu_full_part_2_wf.rdata")
+```
+
+
+## Beta Diversity Plots (by Site)
+
+Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among samples from **the same site**.
+
+### Plots ALL ASVs
+
+First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
+
+```{r}
+remove(list = ls())
+ssu_ps_work_ALMR <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_ALMR.rds")
+ssu_ps_work_CRIS  <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_CRIS.rds")
+ssu_ps_work_PAST <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_PAST.rds")
+ssu_ps_work_PUCL <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_PUCL.rds")
+objects()
+```
+Before we begin, we must first transform sample counts to relative abundance for both data sets.
+
+```{r}
+samp_ps <- c("ssu_ps_work_ALMR", "ssu_ps_work_CRIS", "ssu_ps_work_PAST", "ssu_ps_work_PUCL")
+for (i in samp_ps) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_prop"))
+     tmp_get <- get(i)
+     tmp_ps <- transform_sample_counts(tmp_get, function(otu) otu/sum(otu))
+     tmp_ps@phy_tree <- NULL
+     tmp_ps <- prune_samples(sample_sums(tmp_ps) > 0, tmp_ps)
+     tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE, tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, echo=FALSE}
+swel_col <- c("#D55E00", "#0072B2")
+```
+
+```{r}
+samp_ps <- c("ssu_ps_work_ALMR", "ssu_ps_work_CRIS", "ssu_ps_work_PAST", "ssu_ps_work_PUCL")
+dist <- c("wunifrac", "unifrac", "jsd")
+for (i in samp_ps){
+for (d in dist){
+     tmp_name <- purrr::map_chr(d, ~ paste0(i, "_dist_", .))
+     tmp_name_plot <- purrr::map_chr(d, ~ paste0(i, "_dist_", ., "_plot"))
+     tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_prop")))
+     ord_meths <- c("NMDS", "PCoA", "CCA", "DCA") #    MDS = PCoA, "CCA", "DCA", "DPCoA", "RDA"
+     tmp_plist_name <- purrr::map_chr(d, ~ paste0(i, "_", ., "_plist"))
+     tmp_plist <- llply(as.list(ord_meths), function(i, physeq, d) {
+        ordi = ordinate(physeq, method = i, distance = d)
+        plot_ordination(physeq, ordi, "samples", color = "SEASON")
+   }, tmp_get, d)
+
+  names(tmp_plist) <- ord_meths
+
+  tmp_df <- ldply(tmp_plist, function(x){
+      df = x$data[, 1:2]
+      colnames(df) = c("Axis_1", "Axis_2")
+      return(cbind(df, x$data))})
+  names(tmp_df)[1] = "method"
+  
+  ## NEXT  LINE REORDER FACTORS
+  tmp_df$SITE <- factor(tmp_df$SITE, levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+  tmp_plot <- ggplot(tmp_df, aes(Axis_1, Axis_2,
+                                 color = SEASON, shape = SEASON, fill = SEASON))
+  tmp_plot <- tmp_plot + geom_point(size = 2)
+  tmp_plot <- tmp_plot + facet_wrap(~method, scales = "free")
+  tmp_plot <- tmp_plot + scale_colour_manual(values = swel_col)
+  assign(tmp_plist_name, tmp_plist)
+  assign(tmp_name, tmp_df)
+  assign(tmp_name_plot, tmp_plot)
+  rm(list = ls(pattern = "tmp_"))
+ }
+}
+objects(pattern = "_dist_")
+objects()
+```
+
+
+```{r}
+plist_name <- objects(pattern="_plist")
+plot_num <- c(1,2)
+for (i in plist_name) {
+  for (j in plot_num) {
+       tmp_get_i <- get(i)
+     ## NEXT  LINE REORDER FACTORS
+       tmp_get_i[[j]]$data$SITE <- factor(tmp_get_i[[j]]$data$SITE, 
+                                          levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+       tmp_ord <- names(tmp_get_i)[j]
+       tmp_name <- stringr::str_replace(i, "plist", tmp_ord)
+       tmp_plot <- tmp_get_i[[j]] + scale_colour_manual(values = swel_col)
+       tmp_plot <- tmp_plot + geom_point(size = 4, aes(shape = SEASON)) +
+         theme(legend.position = "bottom")
+       tmp_plot$labels$shape <- "SEASON"
+       assign(tmp_name, tmp_plot)
+       rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+#### Almirante (inner bay)
+
+```{r, echo=FALSE}
+ssu_ps_work_plots_ALMR <-  (ssu_ps_work_ALMR_jsd_NMDS + ssu_ps_work_ALMR_unifrac_NMDS + ssu_ps_work_ALMR_wunifrac_NMDS) /
+                        (ssu_ps_work_ALMR_jsd_PCoA + ssu_ps_work_ALMR_unifrac_PCoA + ssu_ps_work_ALMR_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_plots_ALMR <-  ssu_ps_work_plots_ALMR +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_work_plots_ALMR
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_plots_ALMR
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_ALMR_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_plots_ALMR
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_ALMR_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_plots_ALMR
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_ALMR_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_ALMR_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_ALMR_beta_div_ord_plots.png")
+```
+
+#### Pastores (inner bay)
+
+```{r, echo=FALSE}
+ssu_ps_work_plots_PAST <-  (ssu_ps_work_PAST_jsd_NMDS + ssu_ps_work_PAST_unifrac_NMDS + ssu_ps_work_PAST_wunifrac_NMDS) /
+                        (ssu_ps_work_PAST_jsd_PCoA + ssu_ps_work_PAST_unifrac_PCoA + ssu_ps_work_PAST_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_plots_PAST <-  ssu_ps_work_plots_PAST +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_work_plots_PAST
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_plots_PAST
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_PAST_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_plots_PAST
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_PAST_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_plots_PAST
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_PAST_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_PAST_beta_div_ord_plots.png")
+```
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_PAST_beta_div_ord_plots.png")
+```
+
+#### Cristobal (outer bay)
+
+```{r, echo=FALSE}
+ssu_ps_work_plots_CRIS <-  (ssu_ps_work_CRIS_jsd_NMDS + ssu_ps_work_CRIS_unifrac_NMDS + ssu_ps_work_CRIS_wunifrac_NMDS) /
+                        (ssu_ps_work_CRIS_jsd_PCoA + ssu_ps_work_CRIS_unifrac_PCoA + ssu_ps_work_CRIS_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_plots_CRIS <-  ssu_ps_work_plots_CRIS +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_work_plots_CRIS
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_plots_CRIS
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_CRIS_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_plots_CRIS
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_CRIS_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_plots_CRIS
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_CRIS_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_CRIS_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_CRIS_beta_div_ord_plots.png")
+```
+
+#### Punta Caracol (outer bay)
+
+```{r, echo=FALSE}
+ssu_ps_work_plots_PUCL <-  (ssu_ps_work_PUCL_jsd_NMDS + ssu_ps_work_PUCL_unifrac_NMDS + ssu_ps_work_PUCL_wunifrac_NMDS) /
+                        (ssu_ps_work_PUCL_jsd_PCoA + ssu_ps_work_PUCL_unifrac_PCoA + ssu_ps_work_PUCL_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_plots_PUCL <-  ssu_ps_work_plots_PUCL +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_work_plots_PUCL
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_plots_PUCL
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_PUCL_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_plots_PUCL
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_PUCL_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_plots_PUCL
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_PUCL_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_PUCL_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_PUCL_beta_div_ord_plots.png")
+```
+
+### Plots PIME ASVs
+
+```{r}
+remove(list = ls())
+ssu_ps_pime_ALMR <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime_ALMR.rds")
+ssu_ps_pime_CRIS  <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime_CRIS.rds")
+ssu_ps_pime_PAST <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime_PAST.rds")
+ssu_ps_pime_PUCL <- readRDS("files/trepo/pime/rdata/ssu_ps_asv_pime_PUCL.rds")
+objects()
+```
+
+Before we begin, we must first transform sample counts to relative abundance for both data sets.
+
+```{r}
+samp_ps <- c("ssu_ps_pime_ALMR", "ssu_ps_pime_CRIS", "ssu_ps_pime_PAST", "ssu_ps_pime_PUCL")
+for (i in samp_ps) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_prop"))
+     tmp_get <- get(i)
+     tmp_ps <- transform_sample_counts(tmp_get, function(otu) otu/sum(otu))
+     tmp_ps@phy_tree <- NULL
+     tmp_ps <- prune_samples(sample_sums(tmp_ps) > 0, tmp_ps)
+     tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE, tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, echo=FALSE}
+swel_col <- c("#D55E00", "#0072B2")
+```
+
+```{r}
+samp_ps <- c("ssu_ps_pime_ALMR", "ssu_ps_pime_CRIS", "ssu_ps_pime_PAST", "ssu_ps_pime_PUCL")
+dist <- c("wunifrac", "unifrac", "jsd")
+for (i in samp_ps){
+for (d in dist){
+     tmp_name <- purrr::map_chr(d, ~ paste0(i, "_dist_", .))
+     tmp_name_plot <- purrr::map_chr(d, ~ paste0(i, "_dist_", ., "_plot"))
+     tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_prop")))
+     ord_meths <- c("NMDS", "PCoA", "CCA", "DCA") #    MDS = PCoA, "CCA", "DCA", "DPCoA", "RDA"
+     tmp_plist_name <- purrr::map_chr(d, ~ paste0(i, "_", ., "_plist"))
+     tmp_plist <- llply(as.list(ord_meths), function(i, physeq, d) {
+        ordi = ordinate(physeq, method = i, distance = d)
+        plot_ordination(physeq, ordi, "samples", color = "SEASON")
+   }, tmp_get, d)
+
+  names(tmp_plist) <- ord_meths
+
+  tmp_df <- ldply(tmp_plist, function(x){
+      df = x$data[, 1:2]
+      colnames(df) = c("Axis_1", "Axis_2")
+      return(cbind(df, x$data))})
+  names(tmp_df)[1] = "method"
+  
+  ## NEXT  LINE REORDER FACTORS
+  tmp_df$SITE <- factor(tmp_df$SITE, levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+  tmp_plot <- ggplot(tmp_df, aes(Axis_1, Axis_2,
+                                 color = SEASON, shape = SEASON, fill = SEASON))
+  tmp_plot <- tmp_plot + geom_point(size = 2)
+  tmp_plot <- tmp_plot + facet_wrap(~method, scales = "free")
+  tmp_plot <- tmp_plot + scale_colour_manual(values = swel_col)
+  assign(tmp_plist_name, tmp_plist)
+  assign(tmp_name, tmp_df)
+  assign(tmp_name_plot, tmp_plot)
+  rm(list = ls(pattern = "tmp_"))
+ }
+}
+objects(pattern = "_dist_")
+objects()
+```
+
+
+```{r}
+plist_name <- objects(pattern="_plist")
+plot_num <- c(1,2)
+for (i in plist_name) {
+  for (j in plot_num) {
+       tmp_get_i <- get(i)
+     ## NEXT  LINE REORDER FACTORS
+       tmp_get_i[[j]]$data$SITE <- factor(tmp_get_i[[j]]$data$SITE, 
+                                          levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+       tmp_ord <- names(tmp_get_i)[j]
+       tmp_name <- stringr::str_replace(i, "plist", tmp_ord)
+       tmp_plot <- tmp_get_i[[j]] + scale_colour_manual(values = swel_col)
+       tmp_plot <- tmp_plot + geom_point(size = 4, aes(shape = SEASON)) +
+         theme(legend.position = "bottom")
+       tmp_plot$labels$shape <- "SEASON"
+       assign(tmp_name, tmp_plot)
+       rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+#### Almirante (inner bay)
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots_ALMR <-  (ssu_ps_pime_ALMR_jsd_NMDS + ssu_ps_pime_ALMR_unifrac_NMDS + ssu_ps_pime_ALMR_wunifrac_NMDS) /
+                        (ssu_ps_pime_ALMR_jsd_PCoA + ssu_ps_pime_ALMR_unifrac_PCoA + ssu_ps_pime_ALMR_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_pime_plots_ALMR <-  ssu_ps_pime_plots_ALMR +
+  plot_annotation(
+    title = 'PIME ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_pime_plots_ALMR
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots_ALMR
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_ALMR_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_plots_ALMR
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_ALMR_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_plots_ALMR
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_ALMR_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_ALMR_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_ALMR_beta_div_ord_plots.png")
+```
+
+#### Pastores (inner bay)
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots_PAST <-  (ssu_ps_pime_PAST_jsd_NMDS + ssu_ps_pime_PAST_unifrac_NMDS + ssu_ps_pime_PAST_wunifrac_NMDS) /
+                        (ssu_ps_pime_PAST_jsd_PCoA + ssu_ps_pime_PAST_unifrac_PCoA + ssu_ps_pime_PAST_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_pime_plots_PAST <-  ssu_ps_pime_plots_PAST +
+  plot_annotation(
+    title = 'PIME ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_pime_plots_PAST
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots_PAST
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_PAST_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_plots_PAST
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_PAST_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_plots_PAST
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_PAST_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_PAST_beta_div_ord_plots.png")
+```
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_PAST_beta_div_ord_plots.png")
+```
+
+#### Cristobal (outer bay)
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots_CRIS <-  (ssu_ps_pime_CRIS_jsd_NMDS + ssu_ps_pime_CRIS_unifrac_NMDS + ssu_ps_pime_CRIS_wunifrac_NMDS) /
+                        (ssu_ps_pime_CRIS_jsd_PCoA + ssu_ps_pime_CRIS_unifrac_PCoA + ssu_ps_pime_CRIS_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_pime_plots_CRIS <-  ssu_ps_pime_plots_CRIS +
+  plot_annotation(
+    title = 'PIME ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots_CRIS
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_CRIS_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_plots_CRIS
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_CRIS_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_plots_CRIS
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_CRIS_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_CRIS_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_CRIS_beta_div_ord_plots.png")
+```
+
+#### Punta Caracol (outer bay)
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots_PUCL <-  (ssu_ps_pime_PUCL_jsd_NMDS + ssu_ps_pime_PUCL_unifrac_NMDS + ssu_ps_pime_PUCL_wunifrac_NMDS) /
+                        (ssu_ps_pime_PUCL_jsd_PCoA + ssu_ps_pime_PUCL_unifrac_PCoA + ssu_ps_pime_PUCL_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_pime_plots_PUCL <-  ssu_ps_pime_plots_PUCL +
+  plot_annotation(
+    title = 'PIME ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots_PUCL
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_PUCL_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_plots_PUCL
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_PUCL_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_plots_PUCL
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_PUCL_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_PUCL_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_PUCL_beta_div_ord_plots.png")
+```
+
+# Merged Data Set 
+
+```{r include=FALSE, eval=TRUE}
+## Load to build page only #2
+remove(list = ls())
+load("page_build/trepo/beta_ssu_merge_part_1_wf.rdata")
+```
+
+```{r include=FALSE}
+## Initial Load for  ANALYSIS #1
+remove(list = ls())
+set.seed(119)
+ssu_ps_work <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_merge.rds")
+ssu_ps_pime <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime_merge.rds")
+ssu_hill_hier <- readRDS("files/trepo/alpha/rdata/ssu_merge_hill_hier.rds")
+ssu_ps_pime_tree_ult <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime_merge_tree_ult.rds")
+objects()
+```
+
+
+```{r, echo=FALSE}
+swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
+```
+
+## Significance Tests
+
+In order to test for significance between sample groups, we must perform the following steps:
+
+1. Create distance matrices based on the metrics above (`wunifrac`, `unifrac`, `jsd`). For this we use the function `phyloseq::distance`.
+2. Next, calculate beta dispersion using the `betadisper` function from the `vegan` package.
+3. Then, use the function `permutest` to run a Permutation test for homogeneity of multivariate dispersions.
+4. If the beta dispersion tests are not significant we will run a PERMANOVA (since PERMANOVA assumes equal dispersion), otherwise we will use Analysis of Similarity (ANOSIM).
+
+Steps 1, 2, and 3 are analyzed in a `for` loop that tests all three distance metrics.
+
+Before we begin, we must first transform sample counts to relative abundance for both data sets.
+
+```{r}
+samp_ps <- c("ssu_ps_work", "ssu_ps_pime")
+for (i in samp_ps) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_prop"))
+     tmp_get <- get(i)
+     tmp_ps <- transform_sample_counts(tmp_get, function(otu) otu/sum(otu))
+     tmp_ps@phy_tree <- NULL
+     tmp_ps <- prune_samples(sample_sums(tmp_ps) > 0, tmp_ps)
+     tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE, tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+
+### Beta Dispersion
+
+```{r}
+dist <- c("jsd", "unifrac", "wunifrac")
+for (i in samp_ps) {
+        for (d in dist){
+             tmp_get <- get(purrr::map_chr(i, ~ paste0(i, "_prop")))
+             tmp_samp <- data.frame(sample_data(tmp_get))
+             tmp_df <- phyloseq::distance(tmp_get, method = d)
+             tmp_df_name <- purrr::map_chr(d, ~ paste0(i, "_beta_dist_", .))
+             assign(tmp_df_name, tmp_df)
+             tmp_df2 <- betadisper(tmp_df, tmp_samp$SITE, bias.adjust = TRUE)
+             tmp_df_name2 <- purrr::map_chr(d, ~ paste0(i, "_beta_dispersion_", .))
+             assign(tmp_df_name2, tmp_df2)
+             tmp_df3 <- permutest(tmp_df2, pairwise = TRUE,
+                                  permutations = 1000, binary = FALSE)
+             tmp_df_name3 <- purrr::map_chr(d, ~ paste0(i, "_permutest_", .))
+             assign(tmp_df_name3, tmp_df3)
+             rm(list = ls(pattern = "tmp_"))
+       }
+}
+objects()
+```
+
+
+<details markdown="1">
+<summary>Detailed results of Beta Dispersion & Permutation tests</summary>
+
+##### Permutation tests (ASV)
+
+```{r, eval=TRUE, echo=FALSE}
+samp_ps_asv <- c("ssu_ps_work", "ssu_ps_pime")
+dist <- c("jsd", "unifrac", "wunifrac")
+for (i in samp_ps_asv) {
+  cat("\n", "           *****", i, "*****", "\n")
+        for (d in dist){
+          tmp_get <- get(purrr::map_chr(i, ~ paste0(i, "_permutest_", d)))
+          cat("\n")
+          cat("####################################################", "\n")
+          tmp_print <- c("BETA DISPERSION significance test", d, "distance")
+          cat(tmp_print, "\n")
+          cat("####################################################")
+          cat("\n")
+          print(tmp_get)
+          rm(list = ls(pattern = "tmp_"))
+        }
+}
+```
+</details>
+
+Remember, if the beta dispersion p-value is greater than `0.05` we use PERMANOVA, otherwise we use ANOSIM.
+
+```{r}
+file.remove("files/trepo/beta/tables/tmp_merge.txt")
+for (i in samp_ps) {
+        for (d in dist){
+          tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_permutest_", d)))
+          tmp_res <- eval(isTRUE(tmp_get$tab$`Pr(>F)`[1] < 0.05))
+          tmp_print <- c("Permutation test p-value of  ", i, d,
+          " < 0.05?", tmp_res)
+          cat(tmp_print,"\n", append = TRUE, file = "files/trepo/beta/tables/tmp_merge.txt")
+          rm(list = ls(pattern = "tmp_"))
+        }
+}
+ssu_perm_pvalues <- read_delim("files/trepo/beta/tables/tmp_merge.txt", delim = "\n", col_names = "permutation results")
+```
+
+```{r, echo=FALSE}
+## Make samp dfs
+for (i in samp_ps) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_sampledf"))
+     tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_prop")))
+     tmp_samp <- data.frame(sample_data(tmp_get))
+     assign(tmp_name, tmp_samp)
+     rm(list = ls(pattern = "tmp_"))
+}
+objects(pattern="_sampledf")
+```
+
+### Significance Tests (ALL ASVs)
+
+```{r, echo=FALSE, eval=TRUE}
+adonis_sampledf <- ssu_ps_work_sampledf
+anosim_data <- ssu_ps_work
+print(ssu_perm_pvalues[1:3,])
+```
+
+```{r}
+ssu_ps_work_adonis_jsd <-  adonis(ssu_ps_work_beta_dist_jsd ~ SITE,
+                                 data = adonis_sampledf, permutations = 1000)
+ssu_ps_work_adonis2_jsd <- adonis2(ssu_ps_work_beta_dist_jsd ~ SITE,
+                                  data = adonis_sampledf, permutations = 1000)
+```
+
+```{r}
+ssu_ps_work_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_work_anosim_unifrac <-
+  anosim(phyloseq::distance(ssu_ps_work_prop, "unifrac"),
+         grouping = ssu_ps_work_groups)
+```
+
+```{r}
+ssu_ps_work_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_work_anosim_wunifrac <-
+  anosim(phyloseq::distance(ssu_ps_work_prop, "wunifrac"),
+         grouping = ssu_ps_work_groups)
+```
+
+<details markdown="1">
+<summary>Detailed results of Significance tests for the ALL ASV data set</summary>
+
+```{r, eval=TRUE, echo=FALSE}
+cat("\n", "***PERMANOVA for Jensen-Shannon Divergence, `jsd`***", "\n\n")
+ssu_ps_work_adonis2_jsd
+cat("\n")
+
+cat("\n", "***ANOSIM for Unweighted UniFrac distance, `unifrac`***", "\n\n")
+summary(ssu_ps_work_anosim_unifrac)
+cat("\n")
+
+cat("\n", "***ANOSIM for Weighted-UniFrac distance, `wunifrac`***", "\n\n")
+summary(ssu_ps_work_anosim_wunifrac)
+cat("\n")
+```
+</details>
+
+### Significance Tests (PIME ASVs)
+
+```{r, echo=FALSE, eval=TRUE}
+adonis_sampledf <- ssu_ps_pime_sampledf
+anosim_data <- ssu_ps_pime
+print(ssu_perm_pvalues[4:6,])
+```
+
+```{r}
+ssu_ps_pime_adonis_jsd <-  adonis(ssu_ps_pime_beta_dist_jsd ~ SITE,
+                                 data = adonis_sampledf, permutations = 1000)
+ssu_ps_pime_adonis2_jsd <- adonis2(ssu_ps_pime_beta_dist_jsd ~ SITE,
+                                  data = adonis_sampledf, permutations = 1000)
+```
+
+```{r}
+ssu_ps_pime_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_pime_anosim_unifrac <-
+  anosim(phyloseq::distance(ssu_ps_pime_prop, "unifrac"),
+         grouping = ssu_ps_pime_groups)
+```
+
+```{r}
+ssu_ps_pime_groups <- get_variable(anosim_data, "SITE")
+ssu_ps_pime_anosim_wunifrac <-
+  anosim(phyloseq::distance(ssu_ps_pime_prop, "wunifrac"),
+         grouping = ssu_ps_pime_groups)
+```
+
+<details markdown="1">
+<summary>Detailed results of Significance tests for PIME data set</summary>
+
+```{r, eval=TRUE, echo=FALSE}
+cat("\n", "***PERMANOVA for Jensen-Shannon Divergence, `jsd`***", "\n\n")
+ssu_ps_pime_adonis2_jsd
+cat("\n")
+
+cat("\n", "***ANOSIM for Unweighted UniFrac distance, `unifrac`***", "\n\n")
+summary(ssu_ps_pime_anosim_unifrac)
+cat("\n")
+
+cat("\n", "***ANOSIM for Weighted-UniFrac distance, `wunifrac`***", "\n\n")
+summary(ssu_ps_pime_anosim_wunifrac)
+cat("\n")
+```
+</details>
+
+### Summary
+
+Here is a quick summary of significance tests for the FULL and PIME ASV data sets against the three distance matrices.
+
+```{r, echo=FALSE}
+data_set <- data.frame(c("MERGE", "PIME"))
+dist_metric <- data.frame(c("Jensen-Shannon Divergence", "unweighted UniFrac", "weighted UniFrac"))
+
+tmp_p_value_full <- data.frame(c(ssu_ps_work_adonis_jsd$aov.tab$`Pr(>F)`[1],
+                           ssu_ps_work_anosim_unifrac$signif,
+                           ssu_ps_work_anosim_wunifrac$signif))
+
+tmp_p_value_pime <- data.frame(c(ssu_ps_pime_adonis_jsd$aov.tab$`Pr(>F)`[1],
+                                 ssu_ps_pime_anosim_unifrac$signif,
+                                 ssu_ps_pime_anosim_wunifrac$signif))
+
+ssu_tab_sig_test <- dplyr::bind_cols(dist_metric, tmp_p_value_full) %>%
+                     dplyr::bind_cols(., tmp_p_value_pime) %>%
+  dplyr::rename("distance metric" = 1, "p-value (MERGE)" = 2, "p-value (PIME)" = 3)
+rm(list = ls(pattern = "tmp_"))
+```
+
+```{r, echo=FALSE, eval=TRUE}
+knitr::kable(ssu_tab_sig_test)
+```
+*Summary of significant tests for the ALL ASVs and PIME ASVs data sets.*
+
+```{r echo=FALSE}
+save.image("page_build/trepo/beta_ssu_merge_part_1_wf.rdata")
+gdata::keep(ssu_ps_work, ssu_ps_pime, 
+            ssu_ps_work_prop, ssu_ps_pime_prop,
+            swel_col, sure = TRUE)
+objects()
+```
+
+
+## Beta Diversity Plots
+
+```{r echo=FALSE, eval=FALSE}
+load("page_build/trepo/beta_ssu_merge_part_2_wf.rdata")
+```
+
+Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among sample.
+
+### Plots ALL ASVs
+
+First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
+
+```{r}
+samp_ps <- "ssu_ps_work"
+dist <- c("wunifrac", "unifrac", "jsd")
+for (d in dist){
+     tmp_name <- purrr::map_chr(d, ~ paste0(samp_ps, "_dist_", .))
+     tmp_name_plot <- purrr::map_chr(d, ~ paste0(samp_ps, "_dist_", ., "_plot"))
+     tmp_get <- get(purrr::map_chr(samp_ps, ~ paste0(., "_prop")))
+     ord_meths <- c("NMDS", "PCoA", "CCA", "DCA") #    MDS = PCoA, "CCA", "DCA", "DPCoA", "RDA"
+     tmp_plist_name <- purrr::map_chr(d, ~ paste0(samp_ps, "_", ., "_plist"))
+     tmp_plist <- llply(as.list(ord_meths), function(i, physeq, d) {
+        ordi = ordinate(physeq, method = i, distance = d)
+        plot_ordination(physeq, ordi, "samples", color = "SITE")
+   }, tmp_get, d)
+
+  names(tmp_plist) <- ord_meths
+
+  tmp_df <- ldply(tmp_plist, function(x){
+      df = x$data[, 1:2]
+      colnames(df) = c("Axis_1", "Axis_2")
+      return(cbind(df, x$data))})
+  names(tmp_df)[1] = "method"
+  
+  ## NEXT  LINE REORDER FACTORS
+  tmp_df$SITE <- factor(tmp_df$SITE, levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+  tmp_plot <- ggplot(tmp_df, aes(Axis_1, Axis_2,
+                                 color = SITE, shape = SEASON, fill = SITE))
+  tmp_plot <- tmp_plot + geom_point(size = 2)
+  tmp_plot <- tmp_plot + facet_wrap(~method, scales = "free")
+  tmp_plot <- tmp_plot + scale_colour_manual(values = swel_col)
+  assign(tmp_plist_name, tmp_plist)
+  assign(tmp_name, tmp_df)
+  assign(tmp_name_plot, tmp_plot)
+  rm(list = ls(pattern = "tmp_"))
+}
+
+objects(pattern = "_dist_")
+objects()
+```
+
+```{r}
+samp_ps <- "ssu_ps_work"
+plist_name <- objects(pattern="_plist")
+plot_num <- c(1,2)
+for (i in plist_name) {
+  for (j in plot_num) {
+       tmp_get_i <- get(i)
+     ## NEXT  LINE REORDER FACTORS
+       tmp_get_i[[j]]$data$SITE <- factor(tmp_get_i[[j]]$data$SITE, 
+                                          levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+       tmp_ord <- names(tmp_get_i)[j]
+       tmp_name <- stringr::str_replace(i, "plist", tmp_ord)
+       tmp_plot <- tmp_get_i[[j]] + scale_colour_manual(values = swel_col)
+       tmp_plot <- tmp_plot + geom_point(size = 4, aes(shape = SEASON)) +
+         theme(legend.position = "bottom")
+       tmp_plot$labels$shape <- "SEASON"
+       assign(tmp_name, tmp_plot)
+       rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_plots <-  (ssu_ps_work_jsd_NMDS + ssu_ps_work_unifrac_NMDS + ssu_ps_work_wunifrac_NMDS) /
+                        (ssu_ps_work_jsd_PCoA + ssu_ps_work_unifrac_PCoA + ssu_ps_work_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_plots <-  ssu_ps_work_plots +
+  plot_annotation(
+    title = 'MERGE ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_plots
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_merge_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_plots
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_merge_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_plots
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_merge_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_merge_beta_div_ord_plots.png")
+```
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_beta_div_ord_plots.png")
+```
+
+### Plots ALL PIME ASV
+
+Same as above, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements.
+
+```{r}
+samp_ps <- "ssu_ps_pime"
+dist <- c("wunifrac", "unifrac", "jsd")
+for (d in dist){
+     tmp_name <- purrr::map_chr(d, ~ paste0(samp_ps, "_dist_", .))
+     tmp_name_plot <- purrr::map_chr(d, ~ paste0(samp_ps, "_dist_", ., "_plot"))
+     tmp_get <- get(purrr::map_chr(samp_ps, ~ paste0(., "_prop")))
+     ord_meths <- c("NMDS", "PCoA", "CCA", "DCA") #    MDS = PCoA, "CCA", "DCA", "DPCoA", "RDA"
+     tmp_plist_name <- purrr::map_chr(d, ~ paste0(samp_ps, "_", ., "_plist"))
+     tmp_plist <- llply(as.list(ord_meths), function(i, physeq, d) {
+        ordi = ordinate(physeq, method = i, distance = d)
+        plot_ordination(physeq, ordi, "samples", color = "SITE")
+   }, tmp_get, d)
+
+  names(tmp_plist) <- ord_meths
+
+  tmp_df <- ldply(tmp_plist, function(x){
+      df = x$data[, 1:2]
+      colnames(df) = c("Axis_1", "Axis_2")
+      return(cbind(df, x$data))})
+  names(tmp_df)[1] = "method"
+  
+  ## NEXT  LINE REORDER FACTORS
+  tmp_df$SITE <- factor(tmp_df$SITE, levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+  tmp_plot <- ggplot(tmp_df, aes(Axis_1, Axis_2,
+                                 color = SITE, shape = SEASON, fill = SITE))
+  tmp_plot <- tmp_plot + geom_point(size = 2)
+  tmp_plot <- tmp_plot + facet_wrap(~method, scales = "free")
+  tmp_plot <- tmp_plot + scale_colour_manual(values = swel_col)
+  assign(tmp_plist_name, tmp_plist)
+  assign(tmp_name, tmp_df)
+  assign(tmp_name_plot, tmp_plot)
+  rm(list = ls(pattern = "tmp_"))
+}
+
+```
+
+```{r}
+samp_ps <- "ssu_ps_pime"
+plist_name <- objects(pattern="_plist")
+plot_num <- c(1,2)
+for (i in plist_name) {
+  for (j in plot_num) {
+       tmp_get_i <- get(i)
+     ## NEXT  LINE REORDER FACTORS
+       tmp_get_i[[j]]$data$SITE <- factor(tmp_get_i[[j]]$data$SITE, 
+                                          levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+       tmp_ord <- names(tmp_get_i)[j]
+       tmp_name <- stringr::str_replace(i, "plist", tmp_ord)
+       tmp_plot <- tmp_get_i[[j]] + scale_colour_manual(values = swel_col)
+       tmp_plot <- tmp_plot + geom_point(size = 4, aes(shape = SEASON)) +
+         theme(legend.position = "bottom")
+       tmp_plot$labels$shape <- "SEASON"
+       assign(tmp_name, tmp_plot)
+       rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots <-  (ssu_ps_pime_jsd_NMDS + ssu_ps_pime_unifrac_NMDS + ssu_ps_pime_wunifrac_NMDS) /
+                        (ssu_ps_pime_jsd_PCoA + ssu_ps_pime_unifrac_PCoA + ssu_ps_pime_wunifrac_PCoA) +
+  geom_point(size = 1)
+ssu_ps_pime_plots <-  ssu_ps_pime_plots +
+  plot_annotation(
+    title = 'MERGE ASVs PIME Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+```
+
+
+```{r, echo=FALSE}
+ssu_ps_pime_plots
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_merge_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_plots
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_merge_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_plots
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_merge_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_beta_div_ord_plots.png")
+```
+
+
+```{r echo=FALSE}
+objects()
+rm(ssu_ps_work, ssu_ps_pime, ssu_ps_work_prop, ssu_ps_pime_prop)
+save.image("page_build/trepo/beta_ssu_merge_part_2_wf.rdata")
+```
+
+## Beta Diversity Plots (by Site)
+
+
+Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among samples from **the same site**.
+
+### Plots ALL ASVs
+
+First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
+
+```{r}
+remove(list = ls())
+ssu_ps_work_merge_ALMR <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_merge_ALMR.rds")
+ssu_ps_work_merge_CRIS  <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_merge_CRIS.rds")
+ssu_ps_work_merge_PAST <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_merge_PAST.rds")
+ssu_ps_work_merge_PUCL <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_merge_PUCL.rds")
+objects()
+```
+Before we begin, we must first transform sample counts to relative abundance for both data sets.
+
+```{r}
+samp_ps <- c("ssu_ps_work_merge_ALMR", "ssu_ps_work_merge_CRIS", "ssu_ps_work_merge_PAST", "ssu_ps_work_merge_PUCL")
+for (i in samp_ps) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_prop"))
+     tmp_get <- get(i)
+     tmp_ps <- transform_sample_counts(tmp_get, function(otu) otu/sum(otu))
+     tmp_ps@phy_tree <- NULL
+     tmp_ps <- prune_samples(sample_sums(tmp_ps) > 0, tmp_ps)
+     tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE, tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, echo=FALSE}
+swel_col <- c("#D55E00", "#0072B2")
+```
+
+```{r}
+samp_ps <- c("ssu_ps_work_merge_ALMR", "ssu_ps_work_merge_CRIS", "ssu_ps_work_merge_PAST", "ssu_ps_work_merge_PUCL")
+dist <- c("wunifrac", "unifrac", "jsd")
+for (i in samp_ps){
+for (d in dist){
+     tmp_name <- purrr::map_chr(d, ~ paste0(i, "_dist_", .))
+     tmp_name_plot <- purrr::map_chr(d, ~ paste0(i, "_dist_", ., "_plot"))
+     tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_prop")))
+     ord_meths <- c("NMDS", "PCoA", "CCA", "DCA") #    MDS = PCoA, "CCA", "DCA", "DPCoA", "RDA"
+     tmp_plist_name <- purrr::map_chr(d, ~ paste0(i, "_", ., "_plist"))
+     tmp_plist <- llply(as.list(ord_meths), function(i, physeq, d) {
+        ordi = ordinate(physeq, method = i, distance = d)
+        plot_ordination(physeq, ordi, "samples", color = "SEASON")
+   }, tmp_get, d)
+
+  names(tmp_plist) <- ord_meths
+
+  tmp_df <- ldply(tmp_plist, function(x){
+      df = x$data[, 1:2]
+      colnames(df) = c("Axis_1", "Axis_2")
+      return(cbind(df, x$data))})
+  names(tmp_df)[1] = "method"
+  
+  ## NEXT  LINE REORDER FACTORS
+  tmp_df$SITE <- factor(tmp_df$SITE, levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+  tmp_plot <- ggplot(tmp_df, aes(Axis_1, Axis_2,
+                                 color = SEASON, shape = SEASON, fill = SEASON))
+  tmp_plot <- tmp_plot + geom_point(size = 2)
+  tmp_plot <- tmp_plot + facet_wrap(~method, scales = "free")
+  tmp_plot <- tmp_plot + scale_colour_manual(values = swel_col)
+  assign(tmp_plist_name, tmp_plist)
+  assign(tmp_name, tmp_df)
+  assign(tmp_name_plot, tmp_plot)
+  rm(list = ls(pattern = "tmp_"))
+ }
+}
+objects(pattern = "_dist_")
+objects()
+```
+
+
+```{r}
+plist_name <- objects(pattern="_plist")
+plot_num <- c(1,2)
+for (i in plist_name) {
+  for (j in plot_num) {
+       tmp_get_i <- get(i)
+     ## NEXT  LINE REORDER FACTORS
+       tmp_get_i[[j]]$data$SITE <- factor(tmp_get_i[[j]]$data$SITE, 
+                                          levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+       tmp_ord <- names(tmp_get_i)[j]
+       tmp_name <- stringr::str_replace(i, "plist", tmp_ord)
+       tmp_plot <- tmp_get_i[[j]] + scale_colour_manual(values = swel_col)
+       tmp_plot <- tmp_plot + geom_point(size = 4, aes(shape = SEASON)) +
+         theme(legend.position = "bottom")
+       tmp_plot$labels$shape <- "SEASON"
+       assign(tmp_name, tmp_plot)
+       rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+#### Almirante (inner bay)
+
+```{r, echo=FALSE}
+ssu_ps_work_merge_plots_ALMR <-  (ssu_ps_work_merge_ALMR_jsd_NMDS + ssu_ps_work_merge_ALMR_unifrac_NMDS + ssu_ps_work_merge_ALMR_wunifrac_NMDS) /
+                        (ssu_ps_work_merge_ALMR_jsd_PCoA + ssu_ps_work_merge_ALMR_unifrac_PCoA + ssu_ps_work_merge_ALMR_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_merge_plots_ALMR <-  ssu_ps_work_merge_plots_ALMR +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_work_merge_plots_ALMR
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_merge_plots_ALMR
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_merge_ALMR_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_merge_plots_ALMR
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_merge_ALMR_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_merge_plots_ALMR
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_merge_ALMR_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_merge_ALMR_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_ALMR_beta_div_ord_plots.png")
+```
+
+#### Pastores (inner bay)
+
+```{r, echo=FALSE}
+ssu_ps_work_merge_plots_PAST <-  (ssu_ps_work_merge_PAST_jsd_NMDS + ssu_ps_work_merge_PAST_unifrac_NMDS + ssu_ps_work_merge_PAST_wunifrac_NMDS) /
+                        (ssu_ps_work_merge_PAST_jsd_PCoA + ssu_ps_work_merge_PAST_unifrac_PCoA + ssu_ps_work_merge_PAST_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_merge_plots_PAST <-  ssu_ps_work_merge_plots_PAST +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_work_merge_plots_PAST
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_merge_plots_PAST
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_merge_PAST_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_merge_plots_PAST
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_merge_PAST_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_merge_plots_PAST
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_merge_PAST_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_merge_PAST_beta_div_ord_plots.png")
+```
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_PAST_beta_div_ord_plots.png")
+```
+
+#### Cristobal (outer bay)
+
+```{r, echo=FALSE}
+ssu_ps_work_merge_plots_CRIS <-  (ssu_ps_work_merge_CRIS_jsd_NMDS + ssu_ps_work_merge_CRIS_unifrac_NMDS + ssu_ps_work_merge_CRIS_wunifrac_NMDS) /
+                        (ssu_ps_work_merge_CRIS_jsd_PCoA + ssu_ps_work_merge_CRIS_unifrac_PCoA + ssu_ps_work_merge_CRIS_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_merge_plots_CRIS <-  ssu_ps_work_merge_plots_CRIS +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_work_merge_plots_CRIS
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_merge_plots_CRIS
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_merge_CRIS_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_merge_plots_CRIS
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_merge_CRIS_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_merge_plots_CRIS
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_merge_CRIS_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_merge_CRIS_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_CRIS_beta_div_ord_plots.png")
+```
+
+#### Punta Caracol (outer bay)
+
+```{r, echo=FALSE}
+ssu_ps_work_merge_plots_PUCL <-  (ssu_ps_work_merge_PUCL_jsd_NMDS + ssu_ps_work_merge_PUCL_unifrac_NMDS + ssu_ps_work_merge_PUCL_wunifrac_NMDS) /
+                        (ssu_ps_work_merge_PUCL_jsd_PCoA + ssu_ps_work_merge_PUCL_unifrac_PCoA + ssu_ps_work_merge_PUCL_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_work_merge_plots_PUCL <-  ssu_ps_work_merge_plots_PUCL +
+  plot_annotation(
+    title = 'ALL ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_work_merge_plots_PUCL
+```
+
+```{r, echo=FALSE}
+ssu_ps_work_merge_plots_PUCL
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_work_merge_PUCL_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_work_merge_plots_PUCL
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_work_merge_PUCL_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_work_merge_plots_PUCL
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_work_merge_PUCL_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_merge_PUCL_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_PUCL_beta_div_ord_plots.png")
+```
+
+### Plots PIME ASVs
+
+```{r}
+remove(list = ls())
+ssu_ps_pime_merge_ALMR <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime_ALMR.rds")
+ssu_ps_pime_merge_CRIS  <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime_CRIS.rds")
+ssu_ps_pime_merge_PAST <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime_PAST.rds")
+ssu_ps_pime_merge_PUCL <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime_PUCL.rds")
+objects()
+```
+
+Before we begin, we must first transform sample counts to relative abundance for both data sets.
+
+```{r}
+samp_ps <- c("ssu_ps_pime_merge_ALMR", "ssu_ps_pime_merge_CRIS", "ssu_ps_pime_merge_PAST", "ssu_ps_pime_merge_PUCL")
+for (i in samp_ps) {
+     tmp_name <- purrr::map_chr(i, ~ paste0(., "_prop"))
+     tmp_get <- get(i)
+     tmp_ps <- transform_sample_counts(tmp_get, function(otu) otu/sum(otu))
+     tmp_ps@phy_tree <- NULL
+     tmp_ps <- prune_samples(sample_sums(tmp_ps) > 0, tmp_ps)
+     tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE, tip.label = taxa_names(tmp_ps))
+     tmp_ps <- merge_phyloseq(tmp_ps, sample_data, tmp_tree)
+     print(tmp_name)
+     assign(tmp_name, tmp_ps)
+     rm(list = ls(pattern = "tmp_"))
+}
+```
+
+```{r, echo=FALSE}
+swel_col <- c("#D55E00", "#0072B2")
+```
+
+```{r}
+samp_ps <- c("ssu_ps_pime_merge_ALMR", "ssu_ps_pime_merge_CRIS", "ssu_ps_pime_merge_PAST", "ssu_ps_pime_merge_PUCL")
+dist <- c("wunifrac", "unifrac", "jsd")
+for (i in samp_ps){
+for (d in dist){
+     tmp_name <- purrr::map_chr(d, ~ paste0(i, "_dist_", .))
+     tmp_name_plot <- purrr::map_chr(d, ~ paste0(i, "_dist_", ., "_plot"))
+     tmp_get <- get(purrr::map_chr(i, ~ paste0(., "_prop")))
+     ord_meths <- c("NMDS", "PCoA", "CCA", "DCA") #    MDS = PCoA, "CCA", "DCA", "DPCoA", "RDA"
+     tmp_plist_name <- purrr::map_chr(d, ~ paste0(i, "_", ., "_plist"))
+     tmp_plist <- llply(as.list(ord_meths), function(i, physeq, d) {
+        ordi = ordinate(physeq, method = i, distance = d)
+        plot_ordination(physeq, ordi, "samples", color = "SEASON")
+   }, tmp_get, d)
+
+  names(tmp_plist) <- ord_meths
+
+  tmp_df <- ldply(tmp_plist, function(x){
+      df = x$data[, 1:2]
+      colnames(df) = c("Axis_1", "Axis_2")
+      return(cbind(df, x$data))})
+  names(tmp_df)[1] = "method"
+  
+  ## NEXT  LINE REORDER FACTORS
+  tmp_df$SITE <- factor(tmp_df$SITE, levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+  tmp_plot <- ggplot(tmp_df, aes(Axis_1, Axis_2,
+                                 color = SEASON, shape = SEASON, fill = SEASON))
+  tmp_plot <- tmp_plot + geom_point(size = 2)
+  tmp_plot <- tmp_plot + facet_wrap(~method, scales = "free")
+  tmp_plot <- tmp_plot + scale_colour_manual(values = swel_col)
+  assign(tmp_plist_name, tmp_plist)
+  assign(tmp_name, tmp_df)
+  assign(tmp_name_plot, tmp_plot)
+  rm(list = ls(pattern = "tmp_"))
+ }
+}
+objects(pattern = "_dist_")
+objects()
+```
+
+
+```{r}
+plist_name <- objects(pattern="_plist")
+plot_num <- c(1,2)
+for (i in plist_name) {
+  for (j in plot_num) {
+       tmp_get_i <- get(i)
+     ## NEXT  LINE REORDER FACTORS
+       tmp_get_i[[j]]$data$SITE <- factor(tmp_get_i[[j]]$data$SITE, 
+                                          levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+       tmp_ord <- names(tmp_get_i)[j]
+       tmp_name <- stringr::str_replace(i, "plist", tmp_ord)
+       tmp_plot <- tmp_get_i[[j]] + scale_colour_manual(values = swel_col)
+       tmp_plot <- tmp_plot + geom_point(size = 4, aes(shape = SEASON)) +
+         theme(legend.position = "bottom")
+       tmp_plot$labels$shape <- "SEASON"
+       assign(tmp_name, tmp_plot)
+       rm(list = ls(pattern = "tmp_"))
+  }
+}
+```
+
+#### Almirante (inner bay)
+
+```{r, echo=FALSE}
+ssu_ps_pime_merge_plots_ALMR <-  (ssu_ps_pime_merge_ALMR_jsd_NMDS + ssu_ps_pime_merge_ALMR_unifrac_NMDS + ssu_ps_pime_merge_ALMR_wunifrac_NMDS) /
+                        (ssu_ps_pime_merge_ALMR_jsd_PCoA + ssu_ps_pime_merge_ALMR_unifrac_PCoA + ssu_ps_pime_merge_ALMR_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_pime_merge_plots_ALMR <-  ssu_ps_pime_merge_plots_ALMR +
+  plot_annotation(
+    title = 'PIME ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_pime_merge_plots_ALMR
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_merge_plots_ALMR
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_merge_ALMR_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_merge_plots_ALMR
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_merge_ALMR_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_merge_plots_ALMR
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_merge_ALMR_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_ALMR_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_ALMR_beta_div_ord_plots.png")
+```
+
+#### Pastores (inner bay)
+
+```{r, echo=FALSE}
+ssu_ps_pime_merge_plots_PAST <-  (ssu_ps_pime_merge_PAST_jsd_NMDS + ssu_ps_pime_merge_PAST_unifrac_NMDS + ssu_ps_pime_merge_PAST_wunifrac_NMDS) /
+                        (ssu_ps_pime_merge_PAST_jsd_PCoA + ssu_ps_pime_merge_PAST_unifrac_PCoA + ssu_ps_pime_merge_PAST_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_pime_merge_plots_PAST <-  ssu_ps_pime_merge_plots_PAST +
+  plot_annotation(
+    title = 'PIME ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+ssu_ps_pime_merge_plots_PAST
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_merge_plots_PAST
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_merge_PAST_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_merge_plots_PAST
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_merge_PAST_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_merge_plots_PAST
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_merge_PAST_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_PAST_beta_div_ord_plots.png")
+```
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_PAST_beta_div_ord_plots.png")
+```
+
+#### Cristobal (outer bay)
+
+```{r, echo=FALSE}
+ssu_ps_pime_merge_plots_CRIS <-  (ssu_ps_pime_merge_CRIS_jsd_NMDS + ssu_ps_pime_merge_CRIS_unifrac_NMDS + ssu_ps_pime_merge_CRIS_wunifrac_NMDS) /
+                        (ssu_ps_pime_merge_CRIS_jsd_PCoA + ssu_ps_pime_merge_CRIS_unifrac_PCoA + ssu_ps_pime_merge_CRIS_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_pime_merge_plots_CRIS <-  ssu_ps_pime_merge_plots_CRIS +
+  plot_annotation(
+    title = 'PIME ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_merge_plots_CRIS
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_merge_CRIS_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_merge_plots_CRIS
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_merge_CRIS_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_merge_plots_CRIS
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_merge_CRIS_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_CRIS_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_CRIS_beta_div_ord_plots.png")
+```
+
+#### Punta Caracol (outer bay)
+
+```{r, echo=FALSE}
+ssu_ps_pime_merge_plots_PUCL <-  (ssu_ps_pime_merge_PUCL_jsd_NMDS + ssu_ps_pime_merge_PUCL_unifrac_NMDS + ssu_ps_pime_merge_PUCL_wunifrac_NMDS) /
+                        (ssu_ps_pime_merge_PUCL_jsd_PCoA + ssu_ps_pime_merge_PUCL_unifrac_PCoA + ssu_ps_pime_merge_PUCL_wunifrac_PCoA) + geom_point(size = 1)
+ssu_ps_pime_merge_plots_PUCL <-  ssu_ps_pime_merge_plots_PUCL +
+  plot_annotation(
+    title = 'PIME ASV data set Ordination Plots',
+    subtitle = 'Comparisons by three distance metrics & two ordination method') +
+  plot_layout(widths = c(3, 3), guides = "collect") &
+  theme(plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 16),
+        plot.tag = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_text(size = rel(1.75)),
+        legend.text = element_text(size = rel(1.5)))
+```
+
+```{r, echo=FALSE}
+ssu_ps_pime_merge_plots_PUCL
+dev.off()
+png("files/trepo/beta/figures/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.png", height=28, width=36,
+    units = 'cm', res = 600, bg = "white")
+ssu_ps_pime_merge_plots_PUCL
+dev.off()
+pdf("files/trepo/beta/figures/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.pdf", height = 10, width = 12)
+ssu_ps_pime_merge_plots_PUCL
+dev.off()
+```
+
+```{r, echo=FALSE}
+system("cp files/trepo/beta/figures/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.png")
+```
+
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.png")
+```
+
+
+
+
+```{r include=FALSE, eval=TRUE}
+remove(list = ls())
+```
+
+##  Source Code {.appendix}
+
+The source code for this page can be accessed on GitHub by [clicking this link](https://github.com/tropical-repo/web/blob/master/trepo-beta.Rmd). Please note, that in order to process the data *and*  build the website, we needed to run the workflow and get the results. Then hard code the results and turn off the individual commands. So the raw file for this page is a bit messy---you have been warned.
+

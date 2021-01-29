@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+public_build/
+public/
+files/
+page_build/
+include/
+assets/
