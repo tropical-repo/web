@@ -44,6 +44,7 @@ library(patchwork)
 library(ape)
 library(microbiome)
 library(DECIPHER)
+library(kableExtra)
 
 options(scipen=999)
 knitr::opts_current$get(c(
@@ -70,10 +71,7 @@ In order to run the workflow, you either need to first run the  [DADA2 Workflow]
 
 In this workflow...
 
-# FULL Data Set
-
-
-## Indicator Analysis
+# Indicator Analysis
 
 ```{r, include=FALSE, eval=TRUE}
 ## Load to build page only #2
@@ -94,7 +92,7 @@ ssu_amp_pime_merge <- readRDS("files/trepo/pime/rdata/ssu_merge_asv_amp_pime.rds
 ssu_merge_amp_pime <- readRDS("files/trepo/data-prep/rdata/ssu_amp_merge_data.rds")
 ```
 
-1. Choose a data set(s) & Format Data Frame(s).
+1. Choose a data set(s) & format data frame(s).
 
 ```{r}
 ## CODE TO PREFIILTER DATASET
@@ -125,7 +123,7 @@ for (i in samp_ps) {
 objects()
 ```
 
-2. Set the p-value read count cutoffs.
+2. Set the p-value cutoff for the `indval` analysis.
 
 ```{r}
 ssu_p_val <- 0.01
@@ -187,10 +185,9 @@ for (i in samp_ps) {
      rm(list = ls(pattern = "tmp_"))
 }
 objects()
-ssu_ps_work_indval_summary
 ```
 
-Now we can save a few files and display the data.
+Now we save a few files. We first need to reformat the output of the `indval` function.
 
 ```{r}
 for (i in samp_ps) {
@@ -222,10 +219,9 @@ for (i in samp_ps) {
      assign(tmp_merge_name, tmp_merge_df)
      rm(list = ls(pattern = "tmp_"))
 }
-ssu_ps_work_indval_final
 ```
 
-4. Save a new phyloseq object
+4. Save a new phyloseq object containing only the significant ASVs.
 
 ```{r}
 for (i in samp_ps) {
@@ -247,7 +243,7 @@ objects(pattern = "_ind")
 ssu_ps_pime_merge_ind
 ```
 
-## Summary of Results
+# Summary of Results
 
 ```{r, echo=FALSE}
 nt1A <- ntaxa(ssu_ps_work)
@@ -282,25 +278,31 @@ tmp_asv_af <- data.frame(c(nt1B, nt2B, nt3B, nt4B))
 tmp_merge <- data.frame(c(tmp_reads_b4, tmp_reads_af, tmp_asv_b4, tmp_asv_af))
 
 indval_tab <- dplyr::bind_cols(data_set, tmp_merge) %>%
-              dplyr::rename("data set" = 1, "total reads" = 2, "indval reads" = 3, "total ASVs" = 4, "indval ASVs" = 5)
+              dplyr::rename("data set" = 1, "total reads" = 2, 
+                            "indval reads" = 3, "total ASVs" = 4, 
+                            "indval ASVs" = 5)
 rm(list = ls(pattern = "tmp_"))
 ```
 
 
-```{r, echo=FALSE, eval=TRUE}
+```{r, echo=FALSE, eval=TRUE, layout='l-body'}
 knitr::kable(indval_tab)
 ```
 *Summary of results from Dufrene-Legendre Indicator Species Analysis (`indval`) for the ALL & MERGE data sets as well as the corresponding PIME filtered data sets.*
 
 <br/>
 
-### FULL Data Set
+## FULL Data Set
 
-#### All ASVs
+Remember, the **Full** data set contains all replicate samples.
+
+### All ASVs
+
+First we look at the results of all ASVs.
 
 <br/>
 
-```{r, layout="l-page", eval=TRUE}
+```{r, layout="l-page", eval=TRUE, echo=FALSE}
 ## elementId https://www.random.org/strings/
 tmp_table <- ssu_ps_work_indval_final %>% dplyr::slice_max(order_by = reads_total, n = 100)
 
@@ -324,9 +326,11 @@ datatable(tmp_table, width = "100%", escape = FALSE,
 
 ### PIME ASVs
 
+And then the subset of PIME filtered ASVs.
+
 <br/>
 
-```{r, layout="l-page", eval=TRUE}
+```{r, layout="l-page", eval=TRUE, echo=FALSE}
 tmp_table <- ssu_ps_pime_indval_final %>% dplyr::slice_max(order_by = reads_total, n = 100)
 
 ## elementId https://www.random.org/strings/
@@ -348,13 +352,15 @@ datatable(tmp_table, width = "100%", escape = FALSE,
     DT::formatStyle(columns = colnames(tmp_table), fontSize = '80%')
 ```
 
-### MERGE Data Set
+## MERGE Data Set
 
-#### All ASV
+Now we can summarize the merged data set, where replicate samples are collapsed. Again, we look at all ASVs and PIME filtered ASVs.
+
+### All ASVs
 
 <br/>
 
-```{r, layout="l-page", eval=TRUE}
+```{r, layout="l-page", eval=TRUE, echo=FALSE}
 ## elementId https://www.random.org/strings/
 tmp_table <- ssu_ps_work_merge_indval_final %>% dplyr::slice_max(order_by = reads_total, n = 100)
 
@@ -376,11 +382,11 @@ datatable(tmp_table, width = "100%", escape = FALSE,
     DT::formatStyle(columns = colnames(tmp_table), fontSize = '80%')
 ```
 
-### PIME ASV
+### PIME ASVs
 
 <br/>
 
-```{r, layout="l-page", eval=TRUE}
+```{r, layout="l-page", eval=TRUE, echo=FALSE}
 tmp_table <- ssu_ps_pime_merge_indval_final %>% dplyr::slice_max(order_by = reads_total, n = 100)
 
 ## elementId https://www.random.org/strings/
@@ -403,20 +409,26 @@ datatable(tmp_table, width = "100%", escape = FALSE,
 ```
 
 ```{r, echo=FALSE}
-rm(ssu_ps_work, ssu_ps_pime, ssu_ps_work_merge, ssu_ps_pime_merge, ssu_amp_pime, ssu_amp_pime_merge, ssu_merge_amp_pime)
-
+rm(ssu_ps_work, ssu_ps_pime, ssu_ps_work_merge, ssu_ps_pime_merge, 
+   ssu_amp_pime, ssu_amp_pime_merge, ssu_merge_amp_pime)
 save.image("page_build/trepo/da_ssu_wf_1.rdata")
 #gdata::keep(ssu_ps_work_prop, ssu_ps_pime_prop, swel_col, sure = TRUE)
 objects()
 ```
 
-## Visualizing DA ASVs/OTUs in Anvi’o
+# Visualizing DA ASVs/OTUs in Anvi’o
+
+At this point we turn our attention to visualizing the data in anvi'o. We run the same code for all for data sets:
+
+- FULL + all ASVs  
+- FULL + PIME ASVs  
+- MERGE + all ASVs  
+- MERGE + PIME ASVs  
 
 ```{r, include=FALSE, eval=TRUE}
 ## Load to build page only #2
 remove(list = ls())
-load("page_build/trepo/da_ssu_wf_1.rdata")
-#gdata::keep(ssu_ps_work_prop, ssu_ps_pime_prop, swel_col, sure = TRUE)
+load("page_build/trepo/da_ssu_wf_2.rdata")
 ```
 
 ```{r, include=FALSE}
@@ -427,12 +439,28 @@ ssu_ps_pime <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime.rds")
 
 ssu_ps_work_merge <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_merge.rds")
 ssu_ps_pime_merge <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime_merge.rds")
+rm(list = ls(pattern = "_indval_results"))
+rm(list = ls(pattern = "_indval_summary"))
+rm(list = ls(pattern = "_ind$"))
+rm(list = ls(pattern = "_seq_tab$"))
+rm(list = ls(pattern = "n[r|t][0-9][A|B]"))
+samp_ps <- c("ssu_ps_work", "ssu_ps_pime", "ssu_ps_work_merge", "ssu_ps_pime_merge")
+
+objects()
 ```
 
+We can use the MERGE, PIME filtered data set as an example for what is happening as we move through this portion of the pipeline.
 
-The first thing we need to do is to change all Proteobacteria classes to phyla, that way we can visualize the taxonmoy at the phylum level for everything else. 
+```{r, echo=FALSE, eval=TRUE}
+print("MERGE, PIME filtered data set")
+ssu_ps_pime_merge
+```
 
-1) Get all Class-level Proteobacteria names
+## Preparation
+
+Before we start with anvi'o, we need to do a little housekeeping. The first thing we need to do is to change all Proteobacteria classes to phyla, that way we can visualize all of the taxonomy at the phylum level. 
+
+A) Get all Class-level Proteobacteria names
 
 ```{r}
 for (i in samp_ps) {
@@ -451,12 +479,16 @@ for (i in samp_ps) {
 objects()
 ```
 
-2) Replace Phylum == Proteobacteria with the Class  name.
+```
+"Gammaproteobacteria" "Alphaproteobacteria" "p_Proteobacteria"    "Zetaproteobacteria"
+```
+
+B) Then replace the phylum Proteobacteria with the appropriate class name.
 
 ````{r}
-for (i in samp_ps) {
-  tmp_name <- purrr::map_chr(i, ~paste0(., "_proteo_clean"))
-  tmp_get <- get(i)
+for (j in samp_ps) {
+  tmp_name <- purrr::map_chr(j, ~paste0(., "_proteo_clean"))
+  tmp_get <- get(j)
   tmp_clean <- data.frame(tax_table(tmp_get))
 
    for (i in 1:nrow(tmp_clean)){
@@ -482,14 +514,26 @@ for (i in samp_ps) {
                                taxonomic.rank = rank_names(tmp_get)[2],
                                errorIfNULL=TRUE)))
   tmp_path <- file.path("files/trepo/da/rdata/")
-  saveRDS(tmp_get, paste(tmp_path, i, "_clean.rds", sep = ""))
+  saveRDS(tmp_get, paste(tmp_path, j, "_clean.rds", sep = ""))
   rm(list = ls(pattern = "tmp_"))
 }
 rm(class, order, phylum)
 objects(pattern="_proteo_clean")
+objects()
 ```
 
-Next, we will combine the results of the ISA analysis with the distribution of ASVs (OTUs) across each sample. We are going to do the analysis in anvi’o using the `anvi-interactive` command. Anvi’o likes databases but it also understands that sometimes you don’t have a database. So it offers a manual mode. If you type this command you can have a look at the relevant pieces we need for the visualization, specifically those under the headings MANUAL INPUTS and ADDITIONAL STUFF.
+```{r, echo=FALSE, eval=TRUE}
+print("MERGE, PIME filtered data set")
+ssu_ps_pime_merge_proteo_clean
+```
+
+## Anvi'o Workflow
+
+Now we are ready to anvi'o. The goal is to combine the results of the ISA analysis with the distribution of ASVs across each sample. We are going to visualize the data using the anvi’o function `anvi-interactive`. Anvi’o likes SQLite databases but it also understands that sometimes you don’t have a database. So it offers a manual mode. If you type this command, you can have a look at the pieces of data we need for the visualization, specifically those under the headings MANUAL INPUTS and ADDITIONAL STUFF. 
+
+<aside>
+There are actually many more input options. Here we just highlight those relevant to our goals. 
+</aside>
 
 ```bash
 anvi-interactive -h
@@ -529,20 +573,21 @@ ADDITIONAL STUFF:
                         the remaining columns should be unique attributes.
 ```
 
-There are also a few files we generate that cannot be loaded directly. So, in addition to the files that can be loaded when running the interactive, we also have files that must be added to the database created by anvi’o.
+A few files we generate below cannot be loaded directly. So, in addition to the files that can be loaded when running the interactive, we also have files that must be added to the PROFILE database created by anvi’o when we run the command in `--manual-mode`.
 
-Here is a nice tutorial on [Working with anvi’o additional data tables](http://merenlab.org/2017/12/11/additional-data-tables/). A lot of what we need is covered in this tutorial. To get the most out the visualization we need to create a few files to give anvi’o when we fire up the interactive interface.
+Here is a nice tutorial on [Working with anvi’o additional data tables](http://merenlab.org/2017/12/11/additional-data-tables/). A lot of what we need is covered in this tutorial. To get the most out the visualization, we need to create a few files to give anvi’o when we fire up the interactive interface. Additonal details are provided for each step below.
 
-1. View data: in our case, a sample by ASV abundance matrix.
-2. Additional info about each ASV.
-3. Additional info about each sample.
-4. Taxa abundance data for each sample at some rank.
-5. Dendrograms ordering the ASVs and samples (based on view data).
-6. Fasta file of all ASVs in the analysis.
+1. **View data**: in our case, a sample by ASV abundance matrix.
+2. **Additional info** about each ASV.  
+3. **Additional info** about each sample.
+4. **Taxa** abundance data for each sample at some rank.
+5. **Dendrograms** ordering the ASVs and samples (based on view data).
+6. **Fasta** file of all ASVs in the analysis.
+
 
 ### 1. View data
 
-Let’s start with the `-d` or `--view-data` file. This file needs to be an ASV by sample matrix of read counts. To simplify the visualization, we will use ***all*** ASVs represented by 100 or more total reads, including those identified as differentially abundant by the ISA. We will
+Let’s start with the `-d` or `--view-data` file. This file needs to be an ASV by sample matrix of read counts. To simplify the visualization, we will use ***all*** ASVs represented by some specified percent of total reads or total read count. 
 
 ```{r}
 #trim_val <- 100
@@ -555,6 +600,13 @@ for (i in samp_ps) {
 }
 objects()
 ```
+
+```{r, echo=FALSE, eval=TRUE}
+print("MERGE, PIME filtered data set trimmed by read abundance")
+ssu_ps_pime_merge_trim
+```
+
+For this example, before trimming we had `r sum(readcount(ssu_ps_pime_merge_proteo_clean))` reads and after trimming we had `r sum(readcount(ssu_ps_pime_merge_trim))`, a decrease of  `r sum(readcount(ssu_ps_pime_merge_proteo_clean)) - sum(readcount(ssu_ps_pime_merge_trim))` reads. Similarly, we had `r ntaxa(ssu_ps_pime_merge_proteo_clean)` total ASVs before trimming and `r ntaxa(ssu_ps_pime_merge_trim)` ASVs after trimming. 
 
 ```{r}
 for (i in samp_ps) {
@@ -569,7 +621,16 @@ for (i in samp_ps) {
 objects()
 ```
 
-Or export a table of transformed data.
+View data file for MERGE, PIME filtered data set trimmed by read abundance.
+
+```{r, echo=FALSE, eval=TRUE}
+view_data <- read.table("files/trepo/anvio/ssu_ps_pime_merge/data.txt", sep = "\t", header = TRUE, row.names = NULL)
+view_data[1:5, 1:6]
+```
+
+As you can see, the view data is simply an ASV by sample dataframe. Here we display only the first 5 ASVs and 5 samples
+
+We can also transform ASV counts instead. 
 
 ```{r}
 for (i in samp_ps) {
@@ -589,9 +650,7 @@ objects()
 
 ### 2. Additional Layers for ASVs
 
-Next, we need some additional data **about the ASVs** to overlay on the visual. This can be anything however what I specifically want are the details of the ISA analysis, total reads, and lineage info. I warn you; this code will get ugly and I urge you to find a better way.
-
-Start with an ASV + lineage table for the ASVs in the new phyloseq object.
+Next, we need some additional data **about the ASVs** to overlay on the visual. This can be anything, however what we specifically want are the details of the ISA analysis, total reads, and lineage info. I warn you; this code will get ugly and I urge you to find a better way.
 
 ```{r}
 for (i in samp_ps) {
@@ -620,9 +679,22 @@ for (i in samp_ps) {
 }
 ```
 
+<br/>
+
+Here is a small subset of the `additional_layers.txt` table to demonstrate the format.
+
+```{r, echo=FALSE, eval=TRUE, layout="l-body-outset"}
+additional_layers <- read.table("files/trepo/anvio/ssu_ps_pime_merge/additional_layers.txt", sep = "\t", header = TRUE, row.names = NULL)
+knitr::kable(additional_layers[1:10, 1:13]) %>%
+    kable_styling() %>%
+    scroll_box(height = "250px")
+```
+
+<br/>
+
 ### 3. Additional Views for Samples
 
-Now we want some general data **about the samples** to overlay on the visual. Again, this can be anything. How about a table of alpha diversity metrics? We actually have such a table that was generated way back up the road. Just need to fix the column names.
+Now we want some data **about the samples** to overlay on the visual. Again, this can be anything. How about a table of alpha diversity metrics? We actually have such a table that was generated way back up the road. Just need to fix the column names.
 
 <aside>
 **Added** to  profile.db with  `anvi-import-misc-data` command &  `--target-data-table layers` flag.
@@ -631,7 +703,6 @@ Now we want some general data **about the samples** to overlay on the visual. Ag
 ```{r}
 #metadata_tab <- read.table("files/trepo/dada2/tables/ssu_sample_seq_info.txt", header = TRUE, sep = "\t")
 #metadata_tab[,c(2:5)] <- list(NULL)
-
 for (i in samp_ps) {
      tmp_get <- get(i)
      tmp_df <- data.frame(sample_data(tmp_get))
@@ -651,9 +722,22 @@ for (i in samp_ps) {
 }
 ```
 
+<br/>
+
+Here is a small subset of the `additional_views.txt` table to demonstrate the format.
+
+```{r, echo=FALSE, eval=TRUE, layout="l-body-outset"}
+additional_views <- read.table("files/trepo/anvio/ssu_ps_pime_merge/additional_views.txt", sep = "\t", header = TRUE, row.names = NULL)
+knitr::kable(additional_views[1:10, 1:11]) %>%
+    kable_styling() %>%
+    scroll_box(height = "250px")
+```
+
+<br/>
+
 ### 4. Taxon rank abundance by sample
 
-Anvi'o requires a specifically formatted file to display taxonomy. Turned out this was a little tricky to figure out, but thanks to a [little nifty block of code](https://github.com/joey711/phyloseq/issues/418#issuecomment-262637034) written by [guoyanzhao](https://github.com/guoyanzhao) on the phyloseq Issues forum, it was a piece of cake. The code can be altered to take any rank. See the post for an explanation.
+The next piece of data is the taxonomic breakdown for each sample. Anvi'o requires a specifically formatted file to display taxonomy. Turned out this was a little tricky to code in R, but thanks to a [little nifty block of code](https://github.com/joey711/phyloseq/issues/418#issuecomment-262637034) written by [guoyanzhao](https://github.com/guoyanzhao) on the phyloseq Issues forum, it was a piece of cake. The code can be altered to take any rank. See the post for an explanation.
 
 Anyway, the goal is to sum each taxon at some rank and present that as a bar chart for each sample in the visualization. Anvi'o has a specific format it needs where each row is a sample and each column is a taxon. Taxa names need the prefix `t_<RANK>!`. For example, `t_class!` should be added for Class rank.
 
@@ -690,22 +774,42 @@ for (i in samp_ps) {
 }
 ```
 
+<br/>
+
+Here is a small subset of the `tax_layers.txt` table to demonstrate the format.
+
+```{r, echo=FALSE, eval=TRUE, layout="l-page"}
+tax_layers <- read.table("files/trepo/anvio/ssu_ps_pime_merge/tax_layers.txt", sep = "\t", 
+                         header = TRUE, row.names = NULL, as.is = TRUE, check.names = FALSE)
+knitr::kable(tax_layers[1:10, 1:7]) %>%
+    kable_styling() %>%
+    scroll_box(height = "250px")
+```
+
+<br/>
 
 ### 5. Construct Dendrograms
 
-The last piece we need is to generate dendrograms that order the ASVs by their distribution in the samples and the samples by their ASV composition. For this task we will use anvi'o.
+Now we need to generate dendrograms that order the ASVs by their distribution in the samples and the samples by their ASV composition. For this task we will use anvi'o. 
+
+The first command reads the view data we generated above and uses Euclidean distance and Ward linkage for hierarchical clustering of the ASVs. 
 
 ```bash
 anvi-matrix-to-newick data.txt --distance euclidean \
                                --linkage ward \
                                -o asv.tre
+```
+
+The second command transposes the view data table and then does the same for the samples. 
+
+```bash
 anvi-matrix-to-newick data.txt --distance euclidean \
                                --linkage ward \
                                -o sample.tre \
                                --transpose
 ```
 
-The first command reads the view data we generated above and uses Euclidean distance and Ward linkage for hierarchical clustering of the ASVs. The second command transposes the view data table and then does the same for the samples. There are several distance metrics and linkage methods available. See the help menu for the command by typing `anvi-matrix-to-newick -h`.  Boom.
+There are several distance metrics and linkage methods available. See the help menu for the command by typing `anvi-matrix-to-newick -h`.  Boom.
 
 ```{r, echo=FALSE}
 #bash_commands <- c() USE this to combine all commands
@@ -753,7 +857,7 @@ The file `asv.tre` is **loaded** with  `anvi-interactive` command & the `--tree`
 </aside>
 
 
-The ASV tree is fine as is, but the sample tree needs a [special format](http://merenlab.org/2017/12/11/additional-data-tables/#layer-orders-additional-data-table). Specifically, the tree needs to be in a three column, tab delimited,  *table*. This way you can add multiple orderings to the same file and view them all in the interactive. The table needs to be in this format:
+The ASV tree is fine as is, but the sample tree needs a [special format](http://merenlab.org/2017/12/11/additional-data-tables/#layer-orders-additional-data-table). Specifically, the tree needs to be in a three column, tab delimited,  *table*. This format allows you to add multiple orderings to the same file and view them all in the interactive. The table needs to be in this format:
 
 | item_name	| data_type	| data_value                                          |
 |-----------|-----------|-----------------------------------------------------|
@@ -761,13 +865,13 @@ The ASV tree is fine as is, but the sample tree needs a [special format](http://
 | tree_2  	| newick	  | ((((((((OTU14195:0.0712585,OTU13230:0.0712585)0:,...|
 | (…)	      | (…)	      | (…)                                                 |
 
-This is easy to do by hand, but I *really* need the practice so I will do it in R. Anvi'o is very particular about formatting. For example, if this file ends with a blank line, which it will because when anvi'o made the initial dendrogram it add a new line. We need to get rid of that or we get an error when trying to import the table.
+This is easy to do by hand, but I *really* need the practice, so I will do it in R. Anvi'o is very particular about formatting. For example, the original dendrogram file created by anvi'o ends with a blank line. When we reformt the file, we need to get rid of that blank line or we get an error when trying to import the table.
 
 <aside>
 The file `sample.tre` is **added** to the profile.db with  `anvi-import-misc-data` command &   `--target-data-table layer_orders` flag.
 </aside>
 
-```{r, eval=FALSE}
+```{r}
 for (i in samp_ps) {
       tmp_path <- file.path("files/trepo/anvio/")
       tmp_tree <- read_file(paste(tmp_path, i, "/", "sample", ".tre", sep = ""))
@@ -785,7 +889,7 @@ for (i in samp_ps) {
 }
 ```
 
-```{r, eval=FALSE}
+```{r}
 # FOR TRANSFORMED DATA
 for (i in samp_ps) {
       tmp_path <- file.path("files/trepo/anvio/")
@@ -807,7 +911,7 @@ objects()
 
 ### 6. Make a fasta file
 
-We don't need to add a fasta file, but it is a nice way to keep everything in one place. Plus, you can do BLAST searches directly in the interface by right clicking on the ASV of interest, so it is nice to have the sequences.
+The last piece of data we want is a fasta file of all ASVs in the analysis. We don't need to add a fasta file, but it is a nice way to keep everything in one place. Plus, you can do BLAST searches directly in the interface by right clicking on the ASV of interest, so it is nice to have the sequences.
 
 <aside>
 **Loaded** with `anvi-interactive` command &  `--fasta-file` flag.
@@ -830,9 +934,11 @@ for (i in samp_ps) {
 }
 ```
 
-## Building the Profile Database
+### 7. Building the Profile Database
 
-Time to put all of these pieces together. This gets a little tricky since we do not have a database to start with because some of these files can be loaded directly in the interface but some need to be added to a database. When we fire up the interactive in `--manual` mode, we ***must*** give anvi'o the name of a database and it will *create* that database for us. Then we can shut down the interactive, add the necessary data files, and start back up.
+Time to put all of these pieces together. This gets a little tricky since we do not yet have a database. Some of the files created above can be loaded directly in the interface while some need to be added to a database. When we fire up the interactive in `--manual` mode, we ***must*** give anvi'o the name of a database and it will *create* that database for us. Then we can shut down the interactive, add the necessary data files, and start back up. 
+
+Here run anvi'o in `--manual` mode, give it the `view-data`, `tree`, and `additional-layers` files, and a name for the PROFILE data base. Anvi'o will generate the database and populate it with the provided data. It will then open the interactive interface.
 
 ```bash
 anvi-interactive --view-data data.txt \
@@ -842,7 +948,7 @@ anvi-interactive --view-data data.txt \
                  --manual
 ```
 
-Now we have a new profile database that we can add the sample metadata (`additional_layers.txt`) and the sample dendrogram (sample.tre) using the command `anvi-import-misc-data`. These commands add the table to the new `profile.db`. First, kill the interactive.
+If everything looks good, shut down the interactive so we can add more data. So we have a new profile database that we can add the sample metadata (`additional_views.txt`) and the sample dendrogram (`sample.tre`) using the command `anvi-import-misc-data`. This command adds the tables to the new `profile.db`. 
 
 ```bash
 anvi-import-misc-data additional_views.txt \
@@ -853,7 +959,7 @@ anvi-import-misc-data sample_tree_tab.txt \
                       --target-data-table layer_orders
 ```
 
-One last this is to get the table with the taxonomy total by sample (`tax_layers.txt`) into the profile database. We will run the same command we just used.
+One last this is to get the table with the taxonomy totals by sample (`tax_layers.txt`) into the profile database. We will run the same command we just used.
 
 ```bash
 anvi-import-misc-data tax_layers.txt \
@@ -861,11 +967,11 @@ anvi-import-misc-data tax_layers.txt \
                       --target-data-table layers
 ```
 
-In fact, we could just as easily append the taxonomy total data onto the `additional_layers.txt` and import in one command. But we didn't.
+In fact, we could just as easily append the taxonomy total data onto the `additional_layers.txt` and import in one command. But we didn't, so there.
 
 ## Interactive Interface
 
-With a populated database in hand, we can now begin modifying the visual by running the interactive command again.
+With a populated database in hand, we can now begin modifying and exploring the data by running the interactive command again.
 
 ```bash
 anvi-interactive --view-data data.txt \
@@ -882,91 +988,9 @@ knitr::include_graphics("figures/16s-da-asvs/before.png")
 
 
 ```{r, echo=FALSE}
-rm(ssu_ps_work, ssu_ps_pime, ssu_ps_work_merge, ssu_ps_pime_merge, ssu_amp_pime, ssu_amp_pime_merge, ssu_merge_amp_pime)
-rm(list = ls(pattern = "_ind$"))
-rm(list = ls(pattern = "_trim$"))
-rm(list = ls(pattern = "_proteo_clean$"))
-
+gdata::keep(ssu_ps_pime_merge, ssu_ps_pime_merge_proteo_clean, ssu_ps_pime_merge_trim, sure = TRUE)
 save.image("page_build/trepo/da_ssu_wf_2.rdata")
-#gdata::keep(ssu_ps_work_prop, ssu_ps_pime_prop, swel_col, sure = TRUE)
-objects(pattern = "_proteo_clean$")
 objects()
-
-```
-
-```{r, echo=FALSE}
-# ALL commands
-#anvi-interactive --view-data data_ssu_ps_pime.txt --tree asv_ssu_ps_pime.tre --additional-layers additional_layers_ssu_ps_pime.txt --profile-db profile_ssu_ps_pime.db --fasta-file ssu_ps_pime.fasta --manual
-
-#anvi-import-misc-data additional_views_ssu_ps_pime.txt --pan-or-profile-db profile_ssu_ps_pime.db --target-data-table layers
-
-#anvi-import-misc-data sample_ssu_ps_pime.tre --pan-or-profile-db profile_ssu_ps_pime.db --target-data-table layer_orders
-
-#anvi-import-misc-data tax_layers_ssu_ps_pime.txt --pan-or-profile-db profile_ssu_ps_pime.db --target-data-table layers
-
-#anvi-interactive --view-data data_ssu_ps_pime.txt --tree asv_ssu_ps_pime.tre --additional-layers additional_layers_ssu_ps_pime.txt --profile-db profile_ssu_ps_pime.db --fasta-file ssu_ps_pime.fasta --manual
-
-```
-
-```{r}
-tmp_amp <- ssu_merge_amp_pime
-tmp_amp$metadata <- dplyr::left_join(ssu_merge_amp_pime$metadata, sam_data_merge)
-ssu_merge_amp_pime <- tmp_amp 
-ssu_merge_amp_pime$metadata$SITE <- factor(ssu_merge_amp_pime$metadata$SITE, 
-                                   levels = c("ALMR", "PAST", "CRIS", "PUCL"))
-```
-
-```{r, echo=FALSE}
-sam_data_full <- read.csv("files/trepo/data-prep/tables/ssu_all_samp_data.csv",
-                        header = TRUE)
-sam_data_merge <- sam_data_full
-sam_data_merge$MERGE_ID <- base::paste(sam_data_merge$site_shortcode,
-                                             sam_data_merge$Week, 
-                                             sep = "_")
-sam_data_merge$MERGE_ID <- base::paste(sam_data_merge$MERGE_ID,
-                                             sam_data_merge$REGION, 
-                                             sep = "_")
-sam_data_merge$MERGE_ID <- base::paste(sam_data_merge$MERGE_ID,
-                                             sam_data_merge$SEASON, 
-                                             sep = "_")
-sam_data_merge[, c(1:3, 5:14)] <- NULL
-sam_data_merge <- sam_data_merge[, c(2,1)]
-sam_data_merge <- unique(sam_data_merge)
-sam_data_merge <- sam_data_merge %>% tibble::remove_rownames()
-sam_data_merge <- sam_data_merge %>% dplyr::rename("Sample_ID" = 1, "DATE" = 2)
-sam_data_full[, c(2:3, 5:ncol(sam_data_full))] <- NULL
-sam_data_full <- sam_data_full %>% dplyr::rename("Sample_ID" = 1, "DATE" = 2)
-```
-
-```{r, echo=FALSE}
-swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
-```
-
-```{r}
-amp_timeseries(ssu_merge_amp_pime,
-  time_variable = "DATE",
-  tax_show = 6,
-  group_by = "SITE",
-  tax_aggregate = "Class",
-  tax_class = "Proteobacteria",
-  split = TRUE
-)  + scale_colour_manual(values = swel_col)
-```
-
-```{r}
-library(gganimate)
-
-
-ggplot(gapminder, aes(gdpPercap, lifeExp, size = pop, colour = country)) +
-  geom_point(alpha = 0.7, show.legend = FALSE) +
-  scale_colour_manual(values = country_colors) +
-  scale_size(range = c(2, 12)) +
-  scale_x_log10() +
-  facet_wrap(~continent) +
-  # Here comes the gganimate specific bits
-  labs(title = 'Year: {frame_time}', x = 'GDP per capita', y = 'life expectancy') +
-  transition_time(year) +
-  ease_aes('linear')
 ```
 
 ```{r include=FALSE, eval=TRUE}
@@ -974,37 +998,6 @@ remove(list = ls())
 ```
 
 
-
-
-```{r}
-library(msa)
-library(seqinr)
-library(bio3d)
-# For external alignment using muscle
-#muscle -in Thiohalophilus_screen.fasta -out Thiohalophilus_screen.align
-#tmp_alignment <- read.fasta("files/trepo/anvio/screen/Thiohalophilus_screen.align", rm.dup = TRUE, to.upper = FALSE, to.dash=TRUE)
-
-tmp_fasta <- readDNAStringSet(paste(tmp_path, "/", "Thiohalophilus_screen.fasta", sep = ""))
-tmp_alignment_cw <- msa(tmp_fasta, method = "ClustalW", order = "input")
-tmp_alignment_mu <- msa(tmp_fasta, method = "Muscle", order = "input")
-tmp_alignment_cw <- msaConvert(tmp_alignment_cw, type="bio3d::fasta")
-tmp_alignment_mu <- msaConvert(tmp_alignment_mu, type="bio3d::fasta")
-tmp_seq_id_cw <- seqidentity(tmp_alignment_cw, normalize = TRUE, similarity = FALSE, ncore = 1, nseg.scale = 1)
-tmp_seq_id_mu <- seqidentity(tmp_alignment_mu, normalize = TRUE, similarity = FALSE, ncore = 1, nseg.scale = 1)
-
-tmp_seq_id_cw
-tmp_seq_id_mu
-```
-                     ASV2 ASV41 ASV56 ASV137  ASV3 ASV89 T_thiocyanatoxydans ASV71 ASV66
-ASV2                1.000 0.992 0.989  0.987 0.976 0.973               0.963 0.957 0.960
-ASV41               0.992 1.000 0.997  0.984 0.979 0.971               0.965 0.965 0.968
-ASV56               0.989 0.997 1.000  0.981 0.976 0.968               0.963 0.963 0.965
-ASV137              0.987 0.984 0.981  1.000 0.989 0.987               0.955 0.949 0.952
-ASV3                0.976 0.979 0.976  0.989 1.000 0.992               0.965 0.960 0.963
-ASV89               0.973 0.971 0.968  0.987 0.992 1.000               0.957 0.952 0.955
-T_thiocyanatoxydans 0.963 0.965 0.963  0.955 0.965 0.957               1.000 0.973 0.976
-ASV71               0.957 0.965 0.963  0.949 0.960 0.952               0.973 1.000 0.997
-ASV66               0.960 0.968 0.965  0.952 0.963 0.955               0.976 0.997 1.000
 
 ##  Source Code {.appendix}
 

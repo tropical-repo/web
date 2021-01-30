@@ -125,7 +125,6 @@ for (i in samp_ps) {
 }
 ```
 
-
 ### Beta Dispersion
 
 ```{r}
@@ -149,7 +148,6 @@ for (i in samp_ps) {
 }
 objects()
 ```
-
 
 <details markdown="1">
 <summary>Detailed results of Beta Dispersion & Permutation tests</summary>
@@ -339,6 +337,7 @@ objects()
 
 ```{r echo=FALSE, eval=FALSE}
 load("page_build/trepo/beta_ssu_full_part_2_wf.rdata")
+objects()
 ```
 
 Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among sample.
@@ -2098,8 +2097,6 @@ system("cp files/trepo/beta/figures/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.pn
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.png")
 ```
-
-
 
 
 ```{r include=FALSE, eval=TRUE}

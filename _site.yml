@@ -14,11 +14,11 @@ navbar:
   source_url: true
   right:
     - text: "Introduction"
-      href: intro.html
+      href: trepo-intro.html
     - text: "Physical"
-      href: temp.html
+      href: trepo-physical.html
     - text: "Inverts"
-      href: temp.html
+      href: trepo-inverts.html
     - text: "Microbial"
       menu:
         - text: "Diversity Workflows"
@@ -45,7 +45,7 @@ navbar:
           href: trepo-dada2.html
         - text: "---------"
     - text: "Data"
-      href: temp.html
+      href: trepo-data.html
 output:
     distill::distill_article:
       highlight_downlit: false
