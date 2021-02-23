@@ -43,7 +43,7 @@ library(codefolder)
 #codefolder::generic(init = "show", query = "pre.sourceCode",
 #  style = "position: absolute; right: 14%; z-index: 200")
 #```
-<aside>
+</aside>
 
 ```{r data, include=FALSE}
 ds <- read.csv("T_REPO_raw.csv", header = TRUE)
