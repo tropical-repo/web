@@ -17,7 +17,16 @@ navbar:
       href: trepo-intro.html
     - text: "Physical"
       href: trepo-physical.html
-    - text: "Inverts"
+    - text: "Macrofauna"
+        - text: "---------"
+        - text: "4. Macrofauna Taxa"
+          href: trepo-macrotaxa.html
+        - text: "3. Temporal Diversity"
+          href: trepo-temporal.html
+        - text: "2. Beta Diversity"
+          href: trepo-macrobeta.html
+        - text: "1. Alpha Diversity"
+          href: trepo-macroalpha.html
       href: trepo-inverts.html
     - text: "Microbial"
       menu:
