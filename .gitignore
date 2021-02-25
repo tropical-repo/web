@@ -7,4 +7,4 @@ public/
 files/
 page_build/
 include/
-assets/
+.DS_Store

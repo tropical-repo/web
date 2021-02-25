@@ -18,6 +18,7 @@ navbar:
     - text: "Physical"
       href: trepo-physical.html
     - text: "Macrofauna"
+      menu:
         - text: "---------"
         - text: "4. Macrofauna Taxa"
           href: trepo-macrotaxa.html
@@ -27,7 +28,6 @@ navbar:
           href: trepo-macrobeta.html
         - text: "1. Alpha Diversity"
           href: trepo-macroalpha.html
-      href: trepo-inverts.html
     - text: "Microbial"
       menu:
         - text: "Diversity Workflows"

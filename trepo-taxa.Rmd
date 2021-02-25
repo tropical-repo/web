@@ -960,13 +960,19 @@ obj$data$diff_table <- compare_groups(obj,
                                       groups = da_samp$REGION)
 ```
 
+
 ## Bacteria
+
+```{r, eval=TRUE}
+range.default(obj$data$diff_table$log2_median_ratio, finite=TRUE)
+```
+
 
 ```{r}
 #set.seed(1999)
 obj %>%
   filter_taxa(taxon_names %in% c("Bacteria"), subtaxa = TRUE) %>%
-  filter_taxa(taxon_ranks == "f", supertaxa = TRUE) %>% # subset to the order rank
+#  filter_taxa(taxon_ranks == "f", supertaxa = TRUE) %>% # subset to the order rank
 #  filter_taxa(taxon_names %in% c("Proteobacteria", "Bacteroidia", "Archaea"), subtaxa = TRUE, invert = TRUE) # to remove taxa
   heat_tree(
           node_label = taxon_names,
@@ -974,10 +980,10 @@ obj %>%
          # node_size_range = c(0.01, 0.05),
           node_label_size_range = c(0.008, 0.04),
           node_color = log2_median_ratio,
-          node_color_interval = c(-5.5, 4),
-          edge_color_interval = c(-5.5, 4),
+          node_color_interval = c(-8, 8),
+          edge_color_interval = c(-8, 8),
           node_color_trans = "area",
-          node_color_range = c("#D55E00", "gray", "#0072B2"),
+          node_color_range = c("#0072B2", "gray", "#D55E00"),
           node_size_axis_label = "OTU count",
           node_color_axis_label = "Log 2 median ratio",
           layout = "da",
@@ -994,6 +1000,11 @@ knitr::include_graphics("include/trepo/taxa/differential_heat_tree_merged_Bacter
 
 ## Archaea
 
+```{r, eval=TRUE}
+arch_only <- obj %>% filter_taxa(taxon_names %in% c("Archaea"), subtaxa = TRUE)
+range.default(arch_only$data$diff_table$log2_median_ratio, finite=TRUE)
+```
+
 ```{r}
 #set.seed(1999)
 obj %>%
@@ -1006,10 +1017,10 @@ obj %>%
          # node_size_range = c(0.01, 0.05),
           node_label_size_range = c(0.008, 0.04),
           node_color = log2_median_ratio,
-          node_color_interval = c(-5.5, 4),
-          edge_color_interval = c(-5.5, 4),
+          node_color_interval = c(-5, 7),
+          edge_color_interval = c(-5, 7),
           node_color_trans = "area",
-          node_color_range = c("#D55E00", "gray", "#0072B2"),
+          node_color_range = c("#0072B2", "gray", "#D55E00"),
           node_size_axis_label = "OTU count",
           node_color_axis_label = "Log 2 median ratio",
           layout = "da",
@@ -1025,6 +1036,11 @@ knitr::include_graphics("include/trepo/taxa/differential_heat_tree_merged_Archae
 
 ## Top Phyla
 
+```{r, eval=TRUE}
+top_phyl <- obj %>% filter_taxa(taxon_names %in% c("Proteobacteria", "Acidobacteriota", "Chloroflexi", "Planctomycetota"),  subtaxa = TRUE)
+range.default(top_phyl$data$diff_table$log2_median_ratio, finite=TRUE)
+```
+
 ```{r}
 
 #set.seed(10)
@@ -1034,7 +1050,7 @@ obj %>%
   heat_tree(node_label = taxon_names,
             node_size = n_obs,
             node_color = log2_median_ratio,
-            node_color_range = c("#D55E00", "gray", "#0072B2"),
+            node_color_range = c("#0072B2", "gray", "#D55E00"),
             node_color_interval = c(-3, 3),
             #edge_color_interval = c(-5.5, 4),
             #node_color_trans = "area",
@@ -1052,6 +1068,8 @@ knitr::include_graphics("include/trepo/taxa/differential_heat_tree_merged_phyla.
 ```
 
 ```{r}
+rm(ps_work_merge)
+objects()
 save.image("page_build/trepo/taxa_ssu_wf_part_3.rdata")
 ```
 

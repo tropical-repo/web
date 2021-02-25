@@ -60,19 +60,21 @@ knitr::opts_current$get(c(
 > Hit the *Hide Code* button to hide the R code.
 
 <aside>
+
 ```{r codefolder_ssu, echo=FALSE, results='asis', eval=TRUE}
 codefolder::generic(init = "show", query = "pre.sourceCode",
   style = "position: absolute; right: 14%; z-index: 200")
 ```
+
 </aside>
 
 # Synopsis
 
-This workflow contains beta diversity assessments. In order to run the workflow, you either need to first run the  [DADA2 Workflow](trepo-dada2.html) **and** the [Data Preparation workflow](trepo-data-prep.html) **or** begin with the output files from the Data Preparation workflow. See the [Data Availability](data-availability.html) page for complete details.
+This workflow contains beta diversity assessments. In order to run the workflow, you either need to first run the [DADA2 Workflow](trepo-dada2.html) **and** the [Data Preparation workflow](trepo-data-prep.html) **or** begin with the output files from the Data Preparation workflow. See the [Data Availability](data-availability.html) page for complete details.
 
 In this workflow...
 
-# Full Data Set 
+# Full Data Set
 
 ```{r include=FALSE, eval=TRUE}
 ## Load to build page only #2
@@ -91,7 +93,6 @@ ssu_ps_pime_tree_ult <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime_tree_ult.rd
 objects()
 ```
 
-
 ```{r, echo=FALSE}
 swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
 ```
@@ -100,10 +101,10 @@ swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
 
 In order to test for significance between sample groups, we must perform the following steps:
 
-1. Create distance matrices based on the metrics above (`wunifrac`, `unifrac`, `jsd`). For this we use the function `phyloseq::distance`.
-2. Next, calculate beta dispersion using the `betadisper` function from the `vegan` package.
-3. Then, use the function `permutest` to run a Permutation test for homogeneity of multivariate dispersions.
-4. If the beta dispersion tests are not significant we will run a PERMANOVA (since PERMANOVA assumes equal dispersion), otherwise we will use Analysis of Similarity (ANOSIM).
+1.  Create distance matrices based on the metrics above (`wunifrac`, `unifrac`, `jsd`). For this we use the function `phyloseq::distance`.
+2.  Next, calculate beta dispersion using the `betadisper` function from the `vegan` package.
+3.  Then, use the function `permutest` to run a Permutation test for homogeneity of multivariate dispersions.
+4.  If the beta dispersion tests are not significant we will run a PERMANOVA (since PERMANOVA assumes equal dispersion), otherwise we will use Analysis of Similarity (ANOSIM).
 
 Steps 1, 2, and 3 are analyzed in a `for` loop that tests all three distance metrics.
 
@@ -114,7 +115,7 @@ samp_ps <- c("ssu_ps_work", "ssu_ps_pime")
 for (i in samp_ps) {
      tmp_name <- purrr::map_chr(i, ~ paste0(., "_prop"))
      tmp_get <- get(i)
-     tmp_ps <- transform_sample_counts(tmp_get, function(otu) otu/sum(otu))
+     tmp_ps <- transform_sample_counts(tmp_get, function(otu) 1E6 * otu/sum(otu))
      tmp_ps@phy_tree <- NULL
      tmp_ps <- prune_samples(sample_sums(tmp_ps) > 0, tmp_ps)
      tmp_tree <- rtree(ntaxa(tmp_ps), rooted = TRUE, tip.label = taxa_names(tmp_ps))
@@ -149,8 +150,13 @@ for (i in samp_ps) {
 objects()
 ```
 
-<details markdown="1">
-<summary>Detailed results of Beta Dispersion & Permutation tests</summary>
+<details>
+
+<summary>
+
+Detailed results of Beta Dispersion & Permutation tests
+
+</summary>
 
 ##### Permutation tests (ASV)
 
@@ -172,6 +178,7 @@ for (i in samp_ps_asv) {
         }
 }
 ```
+
 </details>
 
 Remember, if the beta dispersion p-value is greater than `0.05` we use PERMANOVA, otherwise we use ANOSIM.
@@ -188,7 +195,20 @@ for (i in samp_ps) {
           rm(list = ls(pattern = "tmp_"))
         }
 }
-ssu_perm_pvalues <- read_delim("files/trepo/beta/tables/tmp.txt", delim = "\n", col_names = "permutation results")
+ssu_perm_pvalues <- read_delim("files/trepo/beta/tables/tmp.txt", 
+                               delim = "\n", 
+                               
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{col_names = "permutation results")}
 ```
 
 ```{r, echo=FALSE}
@@ -232,8 +252,13 @@ ssu_ps_work_anosim_wunifrac <-
          grouping = ssu_ps_work_groups)
 ```
 
-<details markdown="1">
-<summary>Detailed results of Significance tests for the ALL ASV data set</summary>
+<details>
+
+<summary>
+
+Detailed results of Significance tests for the ALL ASV data set
+
+</summary>
 
 ```{r, eval=TRUE, echo=FALSE}
 cat("\n", "***ANOSIM for Jensen-Shannon Divergence, `jsd`***", "\n\n")
@@ -248,6 +273,7 @@ cat("\n", "***ANOSIM for Weighted-UniFrac distance, `wunifrac`***", "\n\n")
 summary(ssu_ps_work_anosim_wunifrac)
 cat("\n")
 ```
+
 </details>
 
 ### Significance Tests (PIME ASVs)
@@ -279,8 +305,13 @@ ssu_ps_pime_anosim_wunifrac <-
          grouping = ssu_ps_pime_groups)
 ```
 
-<details markdown="1">
-<summary>Detailed results of Significance tests for PIME data set</summary>
+<details>
+
+<summary>
+
+Detailed results of Significance tests for PIME data set
+
+</summary>
 
 ```{r, eval=TRUE, echo=FALSE}
 cat("\n", "***ANOSIM for Jensen-Shannon Divergence, `jsd`***", "\n\n")
@@ -295,6 +326,7 @@ cat("\n", "***ANOSIM for Weighted-UniFrac distance, `wunifrac`***", "\n\n")
 summary(ssu_ps_pime_anosim_wunifrac)
 cat("\n")
 ```
+
 </details>
 
 ### Summary
@@ -322,6 +354,7 @@ rm(list = ls(pattern = "tmp_"))
 ```{r, echo=FALSE, eval=TRUE}
 knitr::kable(ssu_tab_sig_test)
 ```
+
 *Summary of significant tests for the ALL ASVs and PIME ASVs data sets.*
 
 ```{r echo=FALSE}
@@ -332,19 +365,98 @@ gdata::keep(ssu_ps_work, ssu_ps_pime,
 objects()
 ```
 
+##### START HERE
 
 ## Beta Diversity Plots
 
 ```{r echo=FALSE, eval=FALSE}
 load("page_build/trepo/beta_ssu_full_part_2_wf.rdata")
 objects()
+source("hack_code/phyloseq_to_ampvis2.R")
+ssu_ps_work
+
+tmp_otu <- data.frame(t(otu_table(ssu_ps_work)))
+tmp_otu[] <- lapply(tmp_otu, as.numeric)
+tmp_otu <- as.matrix(tmp_otu)
+tmp_tax <- as.matrix(data.frame(tax_table(ssu_ps_work)))
+tmp_samp <- data.frame(sample_data(ssu_ps_work))
+ssu_ps_amp <- merge_phyloseq(otu_table(tmp_otu, taxa_are_rows = TRUE),
+                          tax_table(tmp_tax, tmp_tax),
+                          sample_data(tmp_samp))
+
+tmp_amp_asv_pime  <- data.frame(otu_table(ssu_ps_amp))
+tmp_amp_asv_pime <- tmp_amp_asv_pime %>% tibble::rownames_to_column("OTU")
+tmp_amp_tax_pime  <- data.frame(tax_table(ssu_ps_amp))
+tmp_amp_tax_pime <- tmp_amp_tax_pime %>% tibble::rownames_to_column("OTU")
+tmp_amp_tax_pime$ASV_SEQ <- NULL
+colnames(tmp_amp_tax_pime)[colnames(tmp_amp_tax_pime) == "ASV_ID"] <- "Species"
+tmp_amp_asv_tax_pime <- left_join(tmp_amp_asv_pime, tmp_amp_tax_pime, by = "OTU")
+tmp_samp_data_t <- data.frame(sample_data(ssu_ps_amp))
+ssu_amp_work <- amp_load(tmp_amp_asv_tax_pime, metadata = tmp_samp_data_t, tree = phy_tree(ssu_ps_work))
+```
+
+```{r}
+tmp_select <- ssu_amp_work
+tmp_select$metadata$SITE <- factor(tmp_select$metadata$SITE, 
+                                   levels = c("ALMR", "PAST", "CRIS", "PUCL"))
+ssu_amp_work <- tmp_select
+```
+
+```{r}
+swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
+
+amp_ordinate(
+  ssu_amp_work,
+  filter_species = 0.1,
+  type = "PCoA",
+  distmeasure = "wunifrac",
+  transform = "none",
+  constrain = NULL,
+  x_axis = 1,
+  y_axis = 2,
+  print_caption = FALSE,
+  sample_color_by = "SITE",
+  sample_color_order = NULL,
+  sample_shape_by = NULL,
+  sample_colorframe = FALSE,
+  sample_colorframe_label = NULL,
+  sample_colorframe_label_size = 3,
+  sample_label_by = NULL,
+  sample_label_size = 4,
+  sample_label_segment_color = "black",
+  sample_point_size = 2,
+  sample_trajectory = NULL,
+  sample_trajectory_group = NULL,
+  sample_plotly = NULL,
+  species_plot = FALSE,
+  species_nlabels = 0,
+  species_label_taxonomy = "Genus",
+  species_label_size = 3,
+  species_label_color = "grey10",
+  species_rescale = FALSE,
+  species_point_size = 2,
+  species_shape = 20,
+  species_plotly = FALSE,
+  envfit_factor = NULL,
+  envfit_numeric = NULL,
+  envfit_signif_level = 0.005,
+  envfit_textsize = 3,
+  envfit_textcolor = "darkred",
+  envfit_numeric_arrows_scale = 1,
+  envfit_arrowcolor = "darkred",
+  envfit_show = TRUE,
+  repel_labels = TRUE,
+  opacity = 0.8,
+  tax_empty = "best",
+  detailed_output = FALSE
+) + scale_colour_manual(values = swel_col) 
 ```
 
 Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among sample.
 
 ### Plots ALL ASVs
 
-First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
+First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**, **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
 
 ```{r}
 samp_ps <- "ssu_ps_work"
@@ -441,14 +553,13 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_work_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_work_beta_div_ord_plots.png")
 ```
 
 ### Plots ALL PIME ASV
 
-Same as above, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements.
+Same as above, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**, **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements.
 
 ```{r}
 samp_ps <- "ssu_ps_pime"
@@ -528,7 +639,6 @@ ssu_ps_pime_plots <-  ssu_ps_pime_plots +
         legend.text = element_text(size = rel(1.5)))
 ```
 
-
 ```{r, echo=FALSE}
 ssu_ps_pime_plots
 dev.off()
@@ -545,11 +655,9 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_pime_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_beta_div_ord_plots.png")
 ```
-
 
 ```{r echo=FALSE}
 objects()
@@ -557,14 +665,13 @@ rm(ssu_ps_work, ssu_ps_pime, ssu_ps_work_prop, ssu_ps_pime_prop)
 save.image("page_build/trepo/beta_ssu_full_part_2_wf.rdata")
 ```
 
-
 ## Beta Diversity Plots (by Site)
 
 Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among samples from **the same site**.
 
 ### Plots ALL ASVs
 
-First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
+First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**, **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
 
 ```{r}
 remove(list = ls())
@@ -574,6 +681,7 @@ ssu_ps_work_PAST <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_PAST.rds")
 ssu_ps_work_PUCL <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_PUCL.rds")
 objects()
 ```
+
 Before we begin, we must first transform sample counts to relative abundance for both data sets.
 
 ```{r}
@@ -636,7 +744,6 @@ objects(pattern = "_dist_")
 objects()
 ```
 
-
 ```{r}
 plist_name <- objects(pattern="_plist")
 plot_num <- c(1,2)
@@ -694,7 +801,6 @@ dev.off()
 ```{r, echo=FALSE}
 system("cp files/trepo/beta/figures/ssu_ps_work_ALMR_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_ALMR_beta_div_ord_plots.png")
 ```
-
 
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_work_ALMR_beta_div_ord_plots.png")
@@ -778,7 +884,6 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_work_CRIS_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_CRIS_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_work_CRIS_beta_div_ord_plots.png")
 ```
@@ -819,7 +924,6 @@ dev.off()
 ```{r, echo=FALSE}
 system("cp files/trepo/beta/figures/ssu_ps_work_PUCL_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_PUCL_beta_div_ord_plots.png")
 ```
-
 
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_work_PUCL_beta_div_ord_plots.png")
@@ -898,7 +1002,6 @@ objects(pattern = "_dist_")
 objects()
 ```
 
-
 ```{r}
 plist_name <- objects(pattern="_plist")
 plot_num <- c(1,2)
@@ -956,7 +1059,6 @@ dev.off()
 ```{r, echo=FALSE}
 system("cp files/trepo/beta/figures/ssu_ps_pime_ALMR_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_ALMR_beta_div_ord_plots.png")
 ```
-
 
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_ALMR_beta_div_ord_plots.png")
@@ -1039,7 +1141,6 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_pime_CRIS_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_CRIS_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_CRIS_beta_div_ord_plots.png")
 ```
@@ -1080,12 +1181,11 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_pime_PUCL_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_PUCL_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_PUCL_beta_div_ord_plots.png")
 ```
 
-# Merged Data Set 
+# Merged Data Set
 
 ```{r include=FALSE, eval=TRUE}
 ## Load to build page only #2
@@ -1104,7 +1204,6 @@ ssu_ps_pime_tree_ult <- readRDS("files/trepo/alpha/rdata/ssu_ps_pime_merge_tree_
 objects()
 ```
 
-
 ```{r, echo=FALSE}
 swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
 ```
@@ -1113,10 +1212,10 @@ swel_col <- c("#CC79A7", "#E69F00", "#0072B2", "#56B4E9")
 
 In order to test for significance between sample groups, we must perform the following steps:
 
-1. Create distance matrices based on the metrics above (`wunifrac`, `unifrac`, `jsd`). For this we use the function `phyloseq::distance`.
-2. Next, calculate beta dispersion using the `betadisper` function from the `vegan` package.
-3. Then, use the function `permutest` to run a Permutation test for homogeneity of multivariate dispersions.
-4. If the beta dispersion tests are not significant we will run a PERMANOVA (since PERMANOVA assumes equal dispersion), otherwise we will use Analysis of Similarity (ANOSIM).
+1.  Create distance matrices based on the metrics above (`wunifrac`, `unifrac`, `jsd`). For this we use the function `phyloseq::distance`.
+2.  Next, calculate beta dispersion using the `betadisper` function from the `vegan` package.
+3.  Then, use the function `permutest` to run a Permutation test for homogeneity of multivariate dispersions.
+4.  If the beta dispersion tests are not significant we will run a PERMANOVA (since PERMANOVA assumes equal dispersion), otherwise we will use Analysis of Similarity (ANOSIM).
 
 Steps 1, 2, and 3 are analyzed in a `for` loop that tests all three distance metrics.
 
@@ -1137,7 +1236,6 @@ for (i in samp_ps) {
      rm(list = ls(pattern = "tmp_"))
 }
 ```
-
 
 ### Beta Dispersion
 
@@ -1163,9 +1261,13 @@ for (i in samp_ps) {
 objects()
 ```
 
+<details>
 
-<details markdown="1">
-<summary>Detailed results of Beta Dispersion & Permutation tests</summary>
+<summary>
+
+Detailed results of Beta Dispersion & Permutation tests
+
+</summary>
 
 ##### Permutation tests (ASV)
 
@@ -1187,6 +1289,7 @@ for (i in samp_ps_asv) {
         }
 }
 ```
+
 </details>
 
 Remember, if the beta dispersion p-value is greater than `0.05` we use PERMANOVA, otherwise we use ANOSIM.
@@ -1247,8 +1350,13 @@ ssu_ps_work_anosim_wunifrac <-
          grouping = ssu_ps_work_groups)
 ```
 
-<details markdown="1">
-<summary>Detailed results of Significance tests for the ALL ASV data set</summary>
+<details>
+
+<summary>
+
+Detailed results of Significance tests for the ALL ASV data set
+
+</summary>
 
 ```{r, eval=TRUE, echo=FALSE}
 cat("\n", "***PERMANOVA for Jensen-Shannon Divergence, `jsd`***", "\n\n")
@@ -1263,6 +1371,7 @@ cat("\n", "***ANOSIM for Weighted-UniFrac distance, `wunifrac`***", "\n\n")
 summary(ssu_ps_work_anosim_wunifrac)
 cat("\n")
 ```
+
 </details>
 
 ### Significance Tests (PIME ASVs)
@@ -1294,8 +1403,13 @@ ssu_ps_pime_anosim_wunifrac <-
          grouping = ssu_ps_pime_groups)
 ```
 
-<details markdown="1">
-<summary>Detailed results of Significance tests for PIME data set</summary>
+<details>
+
+<summary>
+
+Detailed results of Significance tests for PIME data set
+
+</summary>
 
 ```{r, eval=TRUE, echo=FALSE}
 cat("\n", "***PERMANOVA for Jensen-Shannon Divergence, `jsd`***", "\n\n")
@@ -1310,6 +1424,7 @@ cat("\n", "***ANOSIM for Weighted-UniFrac distance, `wunifrac`***", "\n\n")
 summary(ssu_ps_pime_anosim_wunifrac)
 cat("\n")
 ```
+
 </details>
 
 ### Summary
@@ -1337,6 +1452,7 @@ rm(list = ls(pattern = "tmp_"))
 ```{r, echo=FALSE, eval=TRUE}
 knitr::kable(ssu_tab_sig_test)
 ```
+
 *Summary of significant tests for the ALL ASVs and PIME ASVs data sets.*
 
 ```{r echo=FALSE}
@@ -1346,7 +1462,6 @@ gdata::keep(ssu_ps_work, ssu_ps_pime,
             swel_col, sure = TRUE)
 objects()
 ```
-
 
 ## Beta Diversity Plots
 
@@ -1358,7 +1473,7 @@ Here we visualize the different distance matrices using several ordination metho
 
 ### Plots ALL ASVs
 
-First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
+First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**, **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
 
 ```{r}
 samp_ps <- "ssu_ps_work"
@@ -1461,7 +1576,7 @@ knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_beta_div_ord_plots
 
 ### Plots ALL PIME ASV
 
-Same as above, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements.
+Same as above, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**, **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements.
 
 ```{r}
 samp_ps <- "ssu_ps_pime"
@@ -1541,7 +1656,6 @@ ssu_ps_pime_plots <-  ssu_ps_pime_plots +
         legend.text = element_text(size = rel(1.5)))
 ```
 
-
 ```{r, echo=FALSE}
 ssu_ps_pime_plots
 dev.off()
@@ -1558,11 +1672,9 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_pime_merge_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_beta_div_ord_plots.png")
 ```
-
 
 ```{r echo=FALSE}
 objects()
@@ -1572,12 +1684,11 @@ save.image("page_build/trepo/beta_ssu_merge_part_2_wf.rdata")
 
 ## Beta Diversity Plots (by Site)
 
-
 Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among samples from **the same site**.
 
 ### Plots ALL ASVs
 
-First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**,  **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
+First, we inspect different ordination methods to see how the samples cluster using **weighted-UniFrac**, **unweighted-UniFrac**, and **Jensen-Shannon Divergence** distance measurements. We could also test different diversity metrics, different transformations, etc.
 
 ```{r}
 remove(list = ls())
@@ -1587,6 +1698,7 @@ ssu_ps_work_merge_PAST <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_merge_PAS
 ssu_ps_work_merge_PUCL <- readRDS("files/trepo/alpha/rdata/ssu_ps_work_merge_PUCL.rds")
 objects()
 ```
+
 Before we begin, we must first transform sample counts to relative abundance for both data sets.
 
 ```{r}
@@ -1649,7 +1761,6 @@ objects(pattern = "_dist_")
 objects()
 ```
 
-
 ```{r}
 plist_name <- objects(pattern="_plist")
 plot_num <- c(1,2)
@@ -1707,7 +1818,6 @@ dev.off()
 ```{r, echo=FALSE}
 system("cp files/trepo/beta/figures/ssu_ps_work_merge_ALMR_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_merge_ALMR_beta_div_ord_plots.png")
 ```
-
 
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_ALMR_beta_div_ord_plots.png")
@@ -1791,7 +1901,6 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_work_merge_CRIS_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_merge_CRIS_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_CRIS_beta_div_ord_plots.png")
 ```
@@ -1832,7 +1941,6 @@ dev.off()
 ```{r, echo=FALSE}
 system("cp files/trepo/beta/figures/ssu_ps_work_merge_PUCL_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_merge_PUCL_beta_div_ord_plots.png")
 ```
-
 
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_work_merge_PUCL_beta_div_ord_plots.png")
@@ -1911,7 +2019,6 @@ objects(pattern = "_dist_")
 objects()
 ```
 
-
 ```{r}
 plist_name <- objects(pattern="_plist")
 plot_num <- c(1,2)
@@ -1969,7 +2076,6 @@ dev.off()
 ```{r, echo=FALSE}
 system("cp files/trepo/beta/figures/ssu_ps_pime_merge_ALMR_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_ALMR_beta_div_ord_plots.png")
 ```
-
 
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_ALMR_beta_div_ord_plots.png")
@@ -2052,7 +2158,6 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_pime_merge_CRIS_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_CRIS_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_CRIS_beta_div_ord_plots.png")
 ```
@@ -2093,17 +2198,14 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.png include/trepo/beta/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.png")
 ```
 
-
 ```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_pime_merge_PUCL_beta_div_ord_plots.png")
 ```
-
 
 ```{r include=FALSE, eval=TRUE}
 remove(list = ls())
 ```
 
-##  Source Code {.appendix}
+## Source Code {.appendix}
 
-The source code for this page can be accessed on GitHub by [clicking this link](https://github.com/tropical-repo/web/blob/master/trepo-beta.Rmd). Please note, that in order to process the data *and*  build the website, we needed to run the workflow and get the results. Then hard code the results and turn off the individual commands. So the raw file for this page is a bit messy---you have been warned.
-
+The source code for this page can be accessed on GitHub by [clicking this link](https://github.com/tropical-repo/web/blob/master/trepo-beta.Rmd). Please note, that in order to process the data *and* build the website, we needed to run the workflow and get the results. Then hard code the results and turn off the individual commands. So the raw file for this page is a bit messy---you have been warned.

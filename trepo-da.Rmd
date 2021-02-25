@@ -993,10 +993,320 @@ save.image("page_build/trepo/da_ssu_wf_2.rdata")
 objects()
 ```
 
+# Lineage Maps
+
+```{r, eval=TRUE}
+#TEMP LOAD ONLY REMOVE WHEN WORKFLOW FINISHED
+remove(list = ls())
+load("page_build/trepo/da_ssu_wf_2.rdata")
+gdata::keep(ssu_ps_pime_merge_trim, sure = TRUE)
+#load("page_build/trepo/da_ssu_wf_part_3.rdata")
+objects()
+```
+
+```{r}
+ssu_ps_work_merge <- readRDS("files/trepo/data-prep/rdata/ssu_ps_work_merge.rds")
+ssu_ps_pime_merge_trim
+ssu_pime_merge <- readRDS("files/trepo/pime/rdata/ssu_ps_merge_asv_pime.rds")
+```
+
+```{r}
+ps <- ssu_pime_merge
+```
+
+```{r}
+ps_water_mc_100 <- prune_taxa(taxa_sums(ps) > 100, ps)
+total_reads_ps_water <- sum(readcount(ps))
+total_reads_ps_water_100 <- sum(readcount(ps_water_mc_100))
+ps_obj <- ps_water_mc_100
+```
+
+```{r}
+#summarize_phyloseq(ps_water_o)
+#summarize_phyloseq(ps_water_mc)
+tax_tab1 <- as.data.frame(tax_table(ps_obj))
+tax_tab1 <- tibble::rownames_to_column(tax_tab1, "otu_id")
+asv_tab1 <- as.data.frame(t(otu_table(ps_obj)))
+asv_tab1 <- tibble::rownames_to_column(asv_tab1, "otu_id")
+sam_tab1 <- data.frame(sample_data(ps_obj))
+sam_tab1[1] <- NULL
+da_samp <- tibble::rownames_to_column(sam_tab1, "sample_id")
+water_mc <- merge(asv_tab1, tax_tab1, by="otu_id")
+water_mc$ASV_SEQ <- NULL
+```
+
+```{r}
+obj <- parse_tax_data(water_mc, class_cols = c("Kingdom", "Phylum",
+                                             "Class", "Order",
+                                             "Family", "Genus", "ASV_ID" ))
+obj$data$tax_abund <- calc_taxon_abund(obj, "tax_data",
+                                       cols = da_samp$sample_id)
+obj$data$tax_occ <- calc_n_samples(obj, "tax_abund",
+                                   groups = da_samp$REGION,
+                                   cols = da_samp$sample_id)
+```
+
+```{r}
+obj$data$diff_table <- compare_groups(obj,
+                                      data = "tax_abund",
+                                      cols = da_samp$sample_id,
+                                      groups = da_samp$REGION)
+```
+
+## Bacteria
+
+```{r, eval=TRUE}
+range.default(obj$data$diff_table$log2_median_ratio, finite=TRUE)
+```
+
+```{r}
+#set.seed(1999)
+obj %>%
+  filter_taxa(taxon_names %in% c("Bacteria"), subtaxa = TRUE) %>%
+  #filter_taxa(taxon_ranks == "f", supertaxa = TRUE) %>% # subset to the order rank
+#  filter_taxa(taxon_names %in% c("Proteobacteria", "Bacteroidia", "Archaea"), subtaxa = TRUE, invert = TRUE) # to remove taxa
+  heat_tree(
+          node_label = taxon_names,
+          node_size = n_obs,
+         # node_size_range = c(0.01, 0.05),
+          node_label_size_range = c(0.008, 0.04),
+          node_color = log2_median_ratio,
+          node_color_interval = c(-6.5, 6.2),
+          edge_color_interval = c(-6.5, 6.2),
+          node_color_trans = "area",
+          node_color_range = c("#0072B2", "gray", "#D55E00"),
+          node_size_axis_label = "ASV count",
+          node_color_axis_label = "Log 2 median ratio",
+          layout = "da",
+          initial_layout = "re",
+          overlap_avoidance = 2,
+          output_file = "files/trepo/da/figures/differential_heat_tree_merged_Bacteria.png")
+```
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-page', eval=TRUE}
+system("cp files/trepo/da/figures/differential_heat_tree_merged_Bacteria.png include/trepo/da/differential_heat_tree_merged_Bacteria.png")
+knitr::include_graphics("include/trepo/da/differential_heat_tree_merged_Bacteria.png")
+```
+
+## Archaea
+
+```{r, eval=TRUE}
+arch_only <- obj %>% filter_taxa(taxon_names %in% c("Archaea"), subtaxa = TRUE)
+range.default(arch_only$data$diff_table$log2_median_ratio, finite=TRUE)
+```
+
+```{r}
+#set.seed(1999)
+obj %>%
+  filter_taxa(taxon_names %in% c("Archaea"), subtaxa = TRUE) %>%
+#  filter_taxa(taxon_ranks == "o", supertaxa = TRUE) %>% # subset to the order rank
+#  filter_taxa(taxon_names %in% c("Proteobacteria", "Bacteroidia", "Archaea"), subtaxa = TRUE, invert = TRUE) # to remove taxa
+  heat_tree(
+          node_label = taxon_names,
+          node_size = n_obs,
+         # node_size_range = c(0.01, 0.05),
+          node_label_size_range = c(0.008, 0.04),
+          node_color = log2_median_ratio,
+          node_color_interval = c(-6.5, 5.6),
+          edge_color_interval = c(-6.5, 5.6),
+          node_color_trans = "area",
+          node_color_range = c("#0072B2", "gray", "#D55E00"),
+          node_size_axis_label = "ASV count",
+          node_color_axis_label = "Log 2 median ratio",
+          layout = "ka",
+          initial_layout = "re",
+          overlap_avoidance = 2,
+          output_file = "files/trepo/da/figures/differential_heat_tree_merged_Archaea.png")
+```
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-page', eval=TRUE}
+system("cp files/trepo/da/figures/differential_heat_tree_merged_Archaea.png include/trepo/da/differential_heat_tree_merged_Archaea.png")
+knitr::include_graphics("include/trepo/da/differential_heat_tree_merged_Archaea.png")
+```
+
+## Top Phyla
+
+```{r, eval=TRUE}
+top_phyl <- obj %>% filter_taxa(taxon_names %in% c("Proteobacteria", "Acidobacteriota", "Chloroflexi", "Planctomycetota"),  subtaxa = TRUE)
+range.default(top_phyl$data$diff_table$log2_median_ratio, finite=TRUE)
+```
+
+```{r}
+#set.seed(10)
+obj %>%
+  filter_taxa(taxon_names %in% c("Proteobacteria", "Acidobacteriota", "Chloroflexi", "Planctomycetota"),
+              subtaxa = TRUE) %>%
+  heat_tree(node_label = taxon_names,
+            node_size = n_obs,
+            node_color = log2_median_ratio,
+            node_color_range = c("#0072B2", "gray", "#D55E00"),
+            node_color_interval = c(-5.3, 6.2),
+            #edge_color_interval = c(-5.3, 6.2),
+            #node_color_trans = "area",
+            tree_label = taxon_names,
+            layout = "ka",
+            initial_layout = "re", 
+            node_color_axis_label = "Log 2 median ratio",
+            node_size_axis_label = "ASV count",
+            #overlap_avoidance = 2,
+            output_file = "files/trepo/da/figures/differential_heat_tree_merged_phyla.png")
+```
+
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-page', eval=TRUE}
+system("cp files/trepo/da/figures/differential_heat_tree_merged_phyla.png include/trepo/da/differential_heat_tree_merged_phyla.png")
+knitr::include_graphics("include/trepo/da/differential_heat_tree_merged_phyla.png")
+```
+
+```{r}
+save.image("page_build/trepo/taxa_ssu_wf_part_3.rdata")
+```
+
+```{r, eval=TRUE}
+gamma_p <- obj %>% filter_taxa(taxon_names %in% c("Gammaproteobacteria"), subtaxa = TRUE)
+range.default(gamma_p$data$diff_table$log2_median_ratio, finite=TRUE)
+```
+
+```{r}
+#set.seed(10)
+obj %>%
+  filter_taxa(taxon_names %in% c("Gammaproteobacteria"),
+              subtaxa = TRUE) %>%
+  heat_tree(node_label = taxon_names,
+            node_size = n_obs,
+            #node_size_trans = "log10",
+            node_size_range = c(0.01, 0.05),
+            edge_size_range = c(0.005, 0.01),
+            node_label_size_range = c(0.01, 0.04),
+            node_color = log2_median_ratio,
+            node_color_range = c("#0072B2", "gray", "#D55E00"),
+            node_color_interval = c(-5.1, 6.2),
+            edge_color_interval = c(-5.1, 6.2),
+            node_color_trans = "area",
+            tree_label = taxon_names,
+            layout = "gr",
+            initial_layout = "re", 
+            node_color_axis_label = "Log 2 median ratio",
+            node_size_axis_label = "ASV count",
+            overlap_avoidance = 2,
+            output_file = "files/trepo/da/figures/differential_heat_tree_merged_gammaprot.png")
+```
+
+“automatic”, “reingold-tilford”, “davidson-harel”, “gem”, “graphopt”, “mds”, “fruchterman-reingold”, “kamada-kawai”, “large-graph”, “drl”
+
+
+```{r}
+obj_site <- parse_tax_data(water_mc, class_cols = c("Kingdom", "Phylum",
+                                                    "Class", "Order",
+                                                    "Family", "Genus", 
+                                                    "ASV_ID" ))
+obj_site$data$tax_abund <- calc_taxon_abund(obj_site, "tax_data",
+                                       cols = da_samp$sample_id)
+obj_site$data$tax_occ <- calc_n_samples(obj_site, "tax_abund",
+                                   groups = da_samp$SITE,
+                                   cols = da_samp$sample_id)
+```
+
+
+```{r}
+obj_site$data$diff_table <- compare_groups(obj_site,
+                                      data = "tax_abund",
+                                      cols = da_samp$sample_id,
+                                      groups = da_samp$SITE,
+                                      combinations = list(c('ALMR', 'PAST'),
+                                                          c('CRIS', 'PUCL')))
+```
+
+
+```{r, eval=TRUE}
+bact_IB <- obj_site %>% filter_obs("diff_table", 
+                                 treatment_1 == "ALMR", 
+                                 treatment_2 == "PAST") %>%
+                      filter_taxa(taxon_names %in% c("Bacteria"), subtaxa = TRUE)
+
+bact_OB <- obj_site %>% filter_obs("diff_table", 
+                                 treatment_1 == "CRIS", 
+                                 treatment_2 == "PUCL") %>%
+                      filter_taxa(taxon_names %in% c("Bacteria"), subtaxa = TRUE)
+
+range.default(bact_IB$data$diff_table$log2_median_ratio, finite = TRUE)
+range.default(bact_OB$data$diff_table$log2_median_ratio, finite = TRUE)
+```
+
+```{r}
+#set.seed(1999)
+obj_site %>%
+  filter_obs("diff_table", treatment_1 == "CRIS", treatment_2 == "PUCL", drop_taxa = TRUE, drop_obs = TRUE) %>%
+  filter_taxa(taxon_names %in% c("Bacteria"), subtaxa = TRUE) %>%
+  heat_tree(
+          node_label = taxon_names,
+          node_size = n_obs,
+         # node_size_range = c(0.01, 0.05),
+          node_label_size_range = c(0.008, 0.04),
+          node_color = log2_median_ratio,
+          node_color_interval = c(-3.6, 3.7),
+          edge_color_interval = c(-3.6, 3.7),
+          node_color_trans = "area",
+          node_color_range = c("#009F81", "gray", "#A40122"),
+          node_size_axis_label = "ASV count",
+          node_color_axis_label = "Log 2 median ratio",
+          layout = "da",
+          initial_layout = "re",
+          overlap_avoidance = 2,
+          output_file = "files/trepo/da/figures/differential_heat_tree_merged_Bacteria_OB.png")
+```
+
+```{r, eval=TRUE}
+gamma_p_IB <- obj_site %>% filter_obs("diff_table", 
+                                 treatment_1 == "ALMR", 
+                                 treatment_2 == "PAST") %>%
+                      filter_taxa(taxon_names %in% c("Gammaproteobacteria"), 
+                                  subtaxa = TRUE)
+
+gamma_p_OB <- obj_site %>% filter_obs("diff_table", 
+                                 treatment_1 == "CRIS", 
+                                 treatment_2 == "PUCL") %>%
+                      filter_taxa(taxon_names %in% c("Gammaproteobacteria"), 
+                                  subtaxa = TRUE)
+
+range.default(gamma_p_IB$data$diff_table$log2_median_ratio, finite = TRUE)
+range.default(gamma_p_OB$data$diff_table$log2_median_ratio, finite = TRUE)
+```
+
+```{r}
+obj_site %>%
+  filter_obs("diff_table", treatment_1 == "ALMR", treatment_2 == "PAST") %>%
+  filter_taxa(taxon_names %in% c("Gammaproteobacteria"),
+              subtaxa = TRUE) %>%
+  heat_tree(#data = diff_table,
+            node_label = taxon_names,
+            node_size = n_obs,
+            #node_size_trans = "log10",
+            node_size_range = c(0.01, 0.05),
+            edge_size_range = c(0.005, 0.01),
+            node_label_size_range = c(0.01, 0.04),
+            node_color = log2_median_ratio,
+            node_color_range = c("#009F81", "gray", "#A40122"),
+            node_color_interval = c(-5.1, 6.2),
+            edge_color_interval = c(-5.1, 6.2),
+            node_color_trans = "area",
+            tree_label = taxon_names,
+            layout = "gr",
+            initial_layout = "re", 
+            node_color_axis_label = "Log 2 median ratio",
+            node_size_axis_label = "ASV count",
+            overlap_avoidance = 2,
+            output_file = "files/trepo/da/figures/differential_heat_tree_merged_gammaprot3.png")
+```
+
+
+
+
+
+
+
 ```{r include=FALSE, eval=TRUE}
 remove(list = ls())
 ```
-
 
 
 ##  Source Code {.appendix}
