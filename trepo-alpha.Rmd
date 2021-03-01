@@ -1,6 +1,6 @@
 ---
 title: "6 Alpha Diversity Estimates"
-descriptiokabn: |
+description: |
   Reproducible workflow for ... In this workflow, ....
 author:
 #  - name: Jarrod J Scott
