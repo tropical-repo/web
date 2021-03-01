@@ -1,0 +1,655 @@
+---
+title: "2. Macrofauna Beta diversity"
+description: |
+  
+author:
+#  - name: Noelle Lucey
+#    url: https://example.com/norajones
+#    affiliation: Spacely Sprockets
+#    affiliation_nrl: https://example.com/spacelysprokets
+# bibliography: assets/cite.bib
+output:
+    distill::distill_article:
+     # css: assets/styles.css
+      toc: true
+      toc_depth: 3
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# set.seed
+
+library(vegan)
+library(ggplot2)
+library(viridis)
+library(cowplot)
+```
+
+```{r include=FALSE, eval=TRUE}
+## Load to build page # 2 trepo-macrobeta.rmd
+remove(list = ls())
+# load("page_build/trepo/beta_ssu_full_part_1_wf.rdata")
+```
+
+# Species Composition
+
+In this section, we explore the differences in the macrofaunal
+assemblages between the four sites across Almirante Bay weekly
+throughout a one-year time frame.
+
+1.  First we determine if there differences in the species composition
+    of the marine taxa sampled? Do some taxa prefer particular sites
+    while others are more generalized?
+
+2.  Then we look at seasonal influences. Does the hypoxic season impact
+    their abundance? Which species are most impacted by seasonal
+    changes? Which species are not?
+
+3.  Finally we look at the assemblage composition differences based on
+    environmental parameters. This is because seasonality may not be the
+    best measure of actual environmental changes. With the physical
+    parameters page (add link) we see extreme fluctuatios, sometimes on
+    a weekly basis, highlighting the stoicasticisty of the conditions.
+    This is particularly true for dissolved oxygen.
+
+We compare the dissimilarity in community composition between each site
+using two metrics; Bray-Curtis dissimilarity and Jaccard dissimilarity.
+Bray-Curtis Dissimilarity is an abundance-based dissimilarity metric
+while Jaccard Dissimilarity explores the intersection over the union of
+sites (i.e. turnover).
+
+These questions are broken down in two parts. First, we statistically
+answer these questions (Part 1) then we visualize the relationships with
+different distance-based similarity matrices and ordination methods
+(Part 2).
+
+Ordination methods:
+
+-   nMDS
+
+-   PCoA
+
+-   RDA (Redundancy analysis)
+
+-   CAP (canonical analysis of principal coordinates)- show the effect
+    of the interaction between factors on your community
+
+-   dbRDA (distance based redundancy analysis
+
+Similarity matrix:
+
+-   Euclidean - good for environmental variables
+
+-   Bray-Curtis (=Sorensen) - good for species variables
+
+-   Jaccard
+
+# Part 1: Statistical Analysis
+
+```{r, include=FALSE}
+swel_col <- c("#E69F00", "#CC79A7", "#0072B2", "#56B4E9")
+```
+
+```{r, include=FALSE}
+ds <- read.csv("T_REPO_raw.csv", header = TRUE)
+ds <- ds[ds$size == "combined",] 
+ds$site <- ordered(ds$site, levels = c("Pastores", "Almirante", "Cristobal", "P_Caracol"))
+ds <- ds[ds$week != "WXX",] 
+site <- factor(ds$site) 
+season <- factor(ds$season)
+week <- factor(ds$week)
+```
+
+Look at untransformed abundance data again:
+
+```{r}
+par(mar=c(2,10,2,2)) 
+boxplot(ds[,16:32],horizontal = TRUE,las=2, main="Abundance")
+```
+
+It looks like some species are much more abundant and variable than
+others. It's probably a good idea to check our mean-variance
+relationship!
+
+First we convert the species data to an mvabund object format used by
+the mvabund function. The function \`mvabund\`calculates the abundance
+in each sample based on counts of all of the lowest taxonomic groups
+identified. It is a part of mvabund package. Data is transformed
+(square-root) (\`sqrt\`) to better visualize the differences and is
+actually a very common transformation for abundance data.
+
+```{r}
+ds_spp <- mvabund(ds[,16:32]) 
+```
+
+Then we look at the mean-variance relationship using the meanvar.plot
+function:
+
+objects()
+gdata
+
+```{r}
+meanvar.plot(ds_spp)
+```
+
+You can clearly see that the species with high means (on the x axis)
+also have high variances (y axis). Then we fit predictive models using a
+negative binomial model for counts.
+
+The mvabund approach improves power across a range of species with
+different variances and includes an assumption of a mean-variance
+relationship use the abundance data. This is family of GLMs with an
+appropriate mean-variance assumption. The default family used by mvabund
+when fitting multivariate GLMs is negative binomial which assumes a
+quadratic mean-variance relationship and a log-linear relationship
+between the response variables and any continuous variables.
+
+To look at the transformed abundance data we use the mvabund plot
+function:
+
+```{r}
+transformed_abund <- plot(ds_spp ~ ds$site, cex.axis=0.8, cex=0.8)
+```
+
+This shows the most abundant species by site. Non-mobile polychaete
+worms (Sedentaria) appear to be the most abundant of the different taxa,
+and P. Caracol appears to have the highest abundances of many taxa.
+
+## Site x Season
+
+```{r}
+model <- manyglm(ds_spp ~ site * season, family="negative_binomial")
+M_output <- anova(model)
+```
+
+```{r, eval=TRUE}
+M_output
+```
+
+Check our model assumptions.
+
+```{r}
+model1_res_plot <- plot(model) 
+```
+
+The residuals look good with the negative binomial distribution (i.e no
+patterns detectable). 
+Note: no samples with were removed from this dataset. We can remove the species with lowest abundances (i.e. Echinoidea, Scaphopoda, Amphipoda, Cladocera, Cumacea which all had low counts within the full bay-wide dataset). This would help the distribution more.. For now we keep everything. 
+
+There were different species assemblages in the different sites (LRT =
+710, P\< 0.001) and during different seasons (LRT = 89.6, P \< 0.001).
+There was also an interaction between region and season (LRT = 55, P \<
+0.003).
+
+Then we perform pairwise comparisons to determine which sites are
+different from each other. For the paper, increase the nBoot to 999...
+
+
+```{r, eval=TRUE}
+model_pairs <- anova(model, pairwise.comp = site, nBoot = 199)
+model_pairs
+```
+
+We see from these results that there is a significant effect of site,
+meaning that the species composition of macrofauna clearly differs
+between the sites that they are found in. Every site is different from
+the others, except Almirante and Pastores.
+
+To determine which species are important, in this we run univariate
+tests for each species separately. We also want to know if there is an
+interaction between site and seasonality in species abundances. This is
+done by using the p.uni="adjusted" argument in the anova function. The
+"adjusted" part of the argument refers to the resampling method used to
+compute the p values, taking into account the correlation between the
+response variables. This correlation is often found in ecological
+systems where different species will interact with each other, competing
+with or facilitating each others' resource use.
+
+Testing hypotheses about the site effects and site-by-season
+interactions, again using a Wald statistic and 199 resamples (better to
+ramp up to 999 for the paper):
+
+```{r, eval=TRUE}
+M1_uni <- anova(model, p.uni="adjusted") 
+M1_uni
+```
+
+Significant Site Effects:
+
+-   unknown, unidentified taxa (LRT = 35.635, P = 0.001)
+
+-   Sedentaria - worms that don't move (sedentary)
+
+-   Errantia - worms that move
+
+-   Caudofoveata
+
+-   Ostracoda
+
+Significant Season Effects:
+
+-   unknown, unidentified taxa
+
+-   Caudofoveata (LRT = 11.5, P =0.22)
+
+-   Bivalvia (P= 0.002)
+
+Significant Site X Season Interaction:
+
+-   Errantia (LRT= 20.287, P = 0.008) - worms that can move around
+
+Errantia has a significant interaction between site and season
+indicating maybe they repopulate uninhabitable sites most quickly, or be
+more transient moving through the bay (LRT = 18, P = 0.002). This may be
+a good indicator of the environmental conditions changing.
+
+Check regional differences in species abundance. Testing hypotheses
+about the region effect and region-by-season interactions, again using a
+Wald statistic and 199 resamples (better to ramp up to 999 for the
+paper):
+
+## Site x Region
+
+```{r, eval=TRUE}
+M2 <- manyglm(ds_spp ~ ds$Region * ds$season, family="negative_binomial")
+M2 <- anova(M2)
+```
+
+There were different species assemblages in the different regions (LRT =
+710, P\< 0.001) and during different seasons (LRT = 89.6, P \< 0.001).
+There was not a strong interaction between region and season (LRT = 27,
+P \< 0.067).
+
+Again, which species is important in this interaction?
+
+```{r, eval=FALSE}
+M2 <- manyglm(ds_spp ~ ds$Region * ds$season, family="negative_binomial")
+M2_uni <- anova(M2, p.uni="adjusted") 
+```
+
+```{r, echo=TRUE}
+M2_uni 
+```
+Significant Region Effect:
+
+-   Unknown
+
+-   Sedentaria
+
+-   Errantia
+
+-   Ostracoda
+
+Significant Season Effect:
+
+-   Unknown
+
+-   Bivalve
+
+-   Caudofoveata
+
+As in the site x season model, regional differences are important for Sedentaria, Errantia/Aciculata, with the addition of Ostracods. All have significantly different abundances depending on the
+Region). Only bivalves and caudofoveata are seasonally influenced (both molluscs; same as site x season effects).
+
+## Site x Time
+Week x Site
+
+```{r, eval=TRUE}
+model_wk <- manyglm(ds_spp ~ site * week, family="negative_binomial")
+M_output_wk <- anova(model_wk)
+M_output
+```
+
+
+# Part 2: Visualizing Results
+
+```{r, include=FALSE}
+# Full year-long data-set
+ds <- read.csv("T_REPO_raw.csv", header = TRUE)
+
+
+# This is the sum of occurrences at each site, in each season every other week (based on microbial sampling); environmental data is averaged by season and site
+short <- read.csv("macro_short1.csv", header = TRUE)
+short$site <- ordered(short$site, levels = c("Pastores", "Almirante", "Cristobal", "P_Caracol"))
+short.data <- short[,13:29] # species (meio.data)
+env_s.data <- short[,31:39] # temp, DO %, DO mgL, pH, chloro, bga (env.data)
+site_s.data <- short[,1:3] # site, region, season (site.data)
+```
+
+## Calculate pairwaise dissimilarity
+
+```{r bray}
+meio.mdf <- as.matrix.data.frame(meio.data)
+rownames(meio.mdf) <- site.data$site
+meio.bray <- vegdist(meio.mdf, method = "bray")
+meio.bray
+```
+
+```{r jaccard}
+meio.jac <- vegdist(meio.mdf, method = "jaccard", binary = T)
+meio.jac
+```
+
+Jaccard dissimilarity simple compares the overlap in species
+presence/absence between pairs of communities, consequently two
+communities with identical species present will have a Jaccard score of
+0 regardless of the relative abundance of these organisms in the
+community. Bray is based on who's who (i.e. abundances) and can be quite
+different than Jaccard in terms of interpreting community changes.
+
+While summary insights into community dissimilarity are valuable for
+understanding the factors which determine the structure of communities
+through time and space, it is important to consider which species are
+driving these trends. We can identify the species which contribute most
+to Bray-Curtis dissimilarity between each pair of sites using SIMPER
+analysis.
+
+SIMPLER is a method for identifying which species contribute most to
+beta diversity (Bray-Curtis dissimilarity). SIMPER identifies the most
+abundant and/or most variable species in the dataset. *Note that SIMPER
+is severely biased towards highly abundant species.*
+
+We can use the simper function in the R package vegan to calculate the
+contribution of each species to Bray-Curtis dissimilarity between sites
+in Almirante Bay. The simper function will automatically perform
+pairwise comparisons between sites, and return cumulative contribution
+scores up to a maximum of 0.7 (70% of total dissimilarity).
+
+```{R simper}
+#simper(meio.data, site.data$site, permutations = 999)
+```
+
+It appears the species that contribute to the majority of site
+differences are the sedentary polychaete worms, at least between
+Pastores, Almirante, Cristobal and P. Caracol. All these relationships
+had low dissimilarity scores. Sipuncula (a mobile worm-like animal) is
+important between Cristobal and Pastores as well as Almirante. The
+absense of these creatures in Almirante and Pastores (check) likely has
+a role in decreasing the bioturbation in these sites, leading to higher
+site evenness but lower richness.
+
+## Ordination
+
+### Principal Coordinates Analysis (PCoA)
+
+Now that we have calculated our dissimilarity matrices, we can using
+ordination to visualize the structure of these communities. Ordination
+by definition is the representation of large numbers of sites or species
+in low dimensional space, such that any underlying relationships in
+these data become visually apparent. Below we will use functions in the
+R package vegan to perform and plot principal coordinates analysis for
+both Bray-Curtis and Jaccard dissimilarity matrices to vizualise
+macrofaunal community structure across Almirante Bay.
+
+```{R}
+# calculate principal coordinates analysis (Bray-Curtis)
+pcoa.meio.bray <- cmdscale(meio.bray, k = 2, eig = T)
+
+# extract axis positions for each site from cmdscale object and create a dataframe for plotting
+pcoa.meio.bray.plotting <- as.data.frame(pcoa.meio.bray$points)
+colnames(pcoa.meio.bray.plotting) <- c("axis_1", "axis_2")
+pcoa.meio.bray.plotting$site <- rownames(pcoa.meio.bray.plotting)
+
+# calculate the proportion of variance in the data which is explained by the first two PCoA axes
+pcoa.meio.bray$eig[1]/(sum(pcoa.meio.bray$eig))
+```
+
+```{R}
+pcoa.meio.bray$eig[2]/(sum(pcoa.meio.bray$eig))
+```
+
+```{R}
+# create a PCoA plot
+pcoa.meio.bray.plot <- ggplot(pcoa.meio.bray.plotting, aes(x = axis_1, y = axis_2, colour = site)) +
+  geom_point(size = 3) +
+  scale_colour_viridis_d(option = "magma", begin = 0.2, end = 0.8) +
+  theme_bw() + 
+  xlab("PCoA 1 (57.3%)") +
+  ylab("PCoA 2 (17.1%)") +
+  annotate(geom = 'text', label = 'Bray-Curtis', x = Inf, y = -Inf, hjust = 1.15, vjust = -1)
+pcoa.meio.bray.plot
+
+# repeat process with Jaccard dissimilarity matrix
+pcoa.meio.jac <- cmdscale(meio.jac, k = 2, eig = T)
+
+pcoa.meio.jac.plotting <- as.data.frame(pcoa.meio.jac$points)
+colnames(pcoa.meio.jac.plotting) <- c("axis_1", "axis_2")
+pcoa.meio.jac.plotting$site <- rownames(pcoa.meio.jac.plotting)
+
+pcoa.meio.jac$eig[1]/(sum(pcoa.meio.jac$eig))
+pcoa.meio.jac$eig[2]/(sum(pcoa.meio.jac$eig))
+
+pcoa.meio.jac.plot <- ggplot(pcoa.meio.jac.plotting, aes(x = axis_1, y = axis_2, colour = site)) +
+  geom_point(size = 3) +
+  scale_colour_viridis_d(option = "magma", begin = 0.2, end = 0.8) +
+  theme_bw() + 
+  xlab("PCoA 1 (60.8%)") +
+  ylab("PCoA 2 (24.9%)") +
+  annotate(geom = 'text', label = 'Jaccard', x = Inf, y = -Inf, hjust = 1.215, vjust = -1)
+
+# extract plot legend
+legend <- get_legend(pcoa.meio.jac.plot)
+
+# plot Bray-Curtis PCoA and Jaccard PCoA side by side
+plot_grid(pcoa.meio.bray.plot + theme(legend.position = 'none'), pcoa.meio.jac.plot + theme(legend.position = 'none'), legend, ncol = 3, rel_widths = c(1,1,0.5))
+```
+
+## Permanova
+
+PERMANOVA (permutational multivariate analysis of variance; Anderson
+2001) is non-parametric multivariate statistical test used to quantify
+the impact of both continuous and categorical variables on dissimilarity
+between communities. While it is valid to construct a PERMANOVA model
+which includes continuous variables, in this instance we will use a
+simple PERMANOVA model to test the effect of season type on macrofaunal
+community composition. The input for PERMANOVA is a dissimilarity matrix
+(Bray-Curtis dissimilarity in this case), and corresponding
+environmental data. A resultant p-value \< 0.05 indicates that centroid
+position and/or dispersion differs between the groups in the model.
+
+As PERMANOVA is affected by both centroid position and disperison, we
+perform a homogeneity of dispersions analysis using betadisper to
+establish whether dispersion is homogeneous between groups (in this
+case, hypoxic season (HS) and normoxic season (NS) associated
+communities). We then perform PERMANOVA analysis using the adonis
+function in the R package vegan.
+
+```{R}
+# Homogeneity of dispersion test
+#permutest(betadisper(meio.bray, site.data$region))
+```
+
+```{R}
+#adonis(meio.bray ~ season, data = site.data, permutations = 999)
+```
+
+The betadisper analysis shows that there is no signficiant difference in
+dispersion between hypoxic and normoxic seasons. The PERMANOVA analysis
+show that there is no significant difference in centroid position or
+dispersion between seasons.
+
+## Distance-Based Redundancy Analysis (dbRDA)
+
+Distance-Based Redundancy Analysis (dbRDA; Legendre and Anderson, 1999)
+is an extension of Redundancy Analysis (RDA) which allows the use of
+non-euclidean distance matrices as inputs (e.g. Bray-Curtis
+dissimilarity). The method works by first calculating a PCoA from the
+dissimilarity matrix, and then subjecting the PCoA eigenvalues (which
+represent dissimilarities in euclidean space) to RDA. The method aims to
+detect linear relationships between environmental variables and these
+dissimilarities.
+
+dbRDA differs from PCoA in that it is a constrained analysis. While PCoA
+axes are generated to explain maximum variation in the distance matrix,
+dbRDA canonical axes are constructed as linear combinations of
+environmental variables. Consequently these axes are constrained to the
+environmental variables in the model, and the ordination will be
+distinct from the PCoA. dbRDA allows us to visualize how environmental
+variables constrain variation in community composition between our
+sites.
+
+As dbRDA considers multiple environmental variables which are measured
+using different techniques, it is important to normalize environmental
+variables such that they can be compared concurrently. This is achieved
+using a z-score transformation. Moreover, dbRDA is sensitive to
+multicolinearity (i.e. high correlation between environmental
+variables). We can test whether any of our environmental variables are
+correlated by calculating variance inflation factors (VIFs) and then
+removing selected terms from the model until all VIF scores are less
+than 10.
+
+Z-Score Transformation - normalizes environmental variables by their
+standard deviation from the mean
+
+# Z-Score transform the environmental data
+
+```{R}
+# Z-Score transform your environmental data
+env.data.z <- env.data
+env.data.z
+env.data.z$temp <- (env.data.z$temp - mean(env.data.z$temp))/sd(env.data.z$temp)
+env.data.z$sal_psu <- (env.data.z$sal_psu - mean(env.data.z$sal_psu))/sd(env.data.z$sal_psu)
+env.data.z$DO_mgL <- (env.data.z$DO_mgL - mean(env.data.z$DO_mgL))/sd(env.data.z$DO_mgL)
+env.data.z$pH <- (env.data.z$pH - mean(env.data.z$pH))/sd(env.data.z$pH)
+env.data.z$Chlorophyll_ugL <- (env.data.z$Chlorophyll_ugL - mean(env.data.z$Chlorophyll_ugL))/sd(env.data.z$Chlorophyll_ugL)
+env.data.z$BGA_ugL <- (env.data.z$BGA_ugL - mean(env.data.z$BGA_ugL))/sd(env.data.z$BGA_ugL)
+```
+
+# Perform dbRDA
+
+```{R}
+# construct full model and calculate VIF, need to remove terms from the model until all VIF scores are < 10.
+dbRDA.full <- capscale(meio.bray ~ temp+sal_psu+DO_mgL+pH+Chlorophyll_ugL+BGA_ugL,
+                       env.data.z)
+vif.cca(dbRDA.full)
+```
+
+```{R}
+# construct reduced model and calculate VIF
+dbRDA.mat <- capscale(meio.bray ~  temp+DO_mgL+BGA_ugL,
+                      env.data.z)
+vif.cca(dbRDA.mat)
+```
+
+```{R}
+# test overall significance of the analysis
+anova(dbRDA.mat)
+```
+
+```{R}
+# test significance of each environmental variable
+anova(dbRDA.mat, by = "terms")
+```
+
+```{R}
+# summary of dbRDA model to extract total variance constrained and axis scores
+summary(dbRDA.mat)
+```
+
+## Plot dbRDA
+
+```{R}
+smry <- summary(dbRDA.mat)
+scrs <- scores(dbRDA.mat)
+df1  <- data.frame(smry$sites[,1:2]) # site scores for RDA1 and RDA2
+df1$site <- rownames(df1)  #add site names
+df2  <- data.frame(smry$biplot[,1:2])  # mapping environmental variables
+
+rda.plot <- ggplot(df1, aes(x=CAP1, y=CAP2, colour = site)) + 
+  geom_segment(data=df2, aes(x=0, xend=CAP1, y=0, yend=CAP2), 
+               color="grey50", arrow=arrow(length=unit(0.01,"npc"))) +
+  geom_text(data=df2, aes(x=CAP1,y=CAP2,label=rownames(df2),
+                          hjust=0.5*(1-sign(CAP1)),vjust=0.5*(1-sign(CAP2))), 
+            color="grey50", size=3) +
+  geom_point(size = 3) +
+  scale_colour_viridis_d(option = "magma", begin = 0.2, end = 0.8) +
+  geom_text(aes(label=rownames(df1),
+                hjust=0,vjust=1.5), colour = "black",size=3) +
+  geom_hline(yintercept=0, linetype="dotted") +
+  geom_vline(xintercept=0, linetype="dotted") +
+  xlim(-1.05, 1.65) +
+  ylim(-1.5, 1.05) +
+  xlab("RDA1 (55.2%)") + # this percentage comes from the CAP1 'importance of components:' proportion explained, which can be found in summary(dbRDA.mat) 
+  ylab("RDA2 (12.3%)") + # this percentage comes from the CAP2 'importance of components:' proportion explained, which can be found in summary(dbRDA.mat) 
+  coord_fixed() +
+  theme_bw() 
+rda.plot
+```
+
+It is critical to remember that we have reduced our model due to
+colinearity between pH, salinity, and chlorophyll, but that these
+factors are confounded. The relationship between constrained variance
+and unconstrained variance informs us of how well the beta-diversity of
+Almirante Bay can be explained by the environmental factors in our
+model. While the measured environmental parameters, namely Dissolved
+Oxygen concentrations, were able to explain trends in Shannon's H'
+observed throughout the bay, the environmental parameters were unable to
+explain a significant proportion of variance in macrofauna community
+composition (beta-diversity) throughout the region.
+
+```{R, PCA}
+# Adding environmental data
+# envfit()` fits vectors or planes while `ordisurf()` fits smooth, potentially non-linear surfaces
+# vector fitting using pca 
+
+pca <- rda(decostand(ds.data, method = "hellinger"), scale =TRUE) # hellinger, 
+pca
+biplot(pca, scaling = "species")
+
+ev <- envfit(pca ~ ., data = env.data,
+             choices = 1:2,
+             scaling = "species",
+             na.rm =TRUE,
+             permutations = 1000)
+ev
+# pH and DO significant, salinity to a lesser extent, BGA marginal, temp is not.
+
+plot(pca, display = "species", type = "n",
+     scaling = "species")
+points(pca, display = "species", pch= 19,
+       scaling = "species")
+plot(ev)
+plot(ev, add = FALSE)
+
+###
+surf <- ordisurf(pca ~ DO_mgL,
+                 data = env.data,
+                 knots = 10,
+                 pch = 16,
+                 isotropic = TRUE,
+                 main = NULL)
+ordipointlabel(pca,
+               display = "species",
+               scaling = "species",
+               add = TRUE)
+
+summary(surf)
+```
+
+```{R, eclipse}
+## Draws ellipsoid hulls & standard error & deviation ellipses
+disp <- "sites"
+scl <- "symmetric"
+plot(pca, type = "n", scaling = scl,
+     display = disp)
+## ellipsoid hull
+ordiellipse(pca, groups = site.data$site,
+            kind = "ehull", col = col_vec,
+            scaling = scl, lwd = 2)
+## standard error of centroid  ellipse
+ordiellipse(pca, groups = site.data$site,
+            draw = "polygon", col = col_vec,
+            scaling = scl, lwd = 2,
+            label = TRUE)
+```
+
+
+```{r include=FALSE, eval=TRUE}
+remove(list = ls())
+```
+
+*Heavily borrowed code and text for this page from:
+<https://www.rpubs.com/roalle/mres_2019> - thank you!*
