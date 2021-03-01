@@ -1,0 +1,879 @@
+---
+title: "1. Macrofauna Alpha Diversity"
+description: |
+  Reproducible workflow to assess the macrofaunal diversity. 
+author:
+#  - name: Noelle Lucey
+#    url: https://example.com/norajones
+#    affiliation: Spacely Sprockets
+#    affiliation_nrl: https://example.com/spacelysprokets
+bibliography: assets/cite.bib
+output:
+    distill::distill_article:
+      css: assets/styles.css
+      toc: true
+      toc_depth: 3
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE) # echo=true, visible code, eval=true, with output
+
+library(vegan)
+library(ggplot2)
+library(cowplot)
+library(mvabund) 
+library(ggpubr)
+
+remove(list = ls())
+```
+
+> Hit the *Hide Code* button to hide the R code.
+
+<aside>
+
+```{r codefolder_ssu, echo=FALSE, results='asis', eval=TRUE}
+codefolder::generic(init = "show", query = "pre.sourceCode",
+  style = "position: absolute; right: 14%; z-index: 200")
+```
+
+</aside>
+
+# Summary
+
+This workflow contains diversity assessments for the **full** data
+set---all samples---and a condensed **short** data set---samples
+averaged by site and season. In order to run the workflow, you need the
+output files T_REPO_raw.csv or macro_short1.csv. See the [Data
+Availability](data-availability.html) page for complete details.
+
+```{r, echo=FALSE, fig.cap="Four study sites within Almirante Bay. Color gradient shows the oxygen saturation (%) approx. 1 meter above the seafloor. Oxygen was measured at 83 sites throughout the bay on Sept. 24, 2017 and values interpolated with ArcGIS.", out.width = '100%'}
+knitr::include_graphics("trepo_pics/trepo_DO_map.png")
+```
+
+```{r, include=FALSE}
+ds <- read.csv("T_REPO_raw.csv", header = TRUE)
+ds <- ds[ds$size == "combined",] # select combinded size fraction
+ds$site <- ordered(ds$site, levels = c("Pastores", "Almirante", "Cristobal", "P_Caracol"))
+ds <- ds[ds$week != "WXX",] # only looking at one year period corresponding to the microbial dataset
+
+ds.data <- ds[,16:32] # species matrix
+env.data <- ds[,34:40] # temp, DO %, DO mgL, pH, chloro, bga
+site.data <- ds[,1:6] # site, region, season, week, Region, season
+
+# Data Exploration with truncated data set, from dates matching microbial samples
+# This is the sum of occurrences at each site, in each season every other week (based on microbial sampling); environmental data is averaged by season and site
+short <- read.csv("macro_short1.csv", header = TRUE)
+short$site <- ordered(short$site, levels = c("Pastores", "Almirante", "Cristobal", "P_Caracol"))
+short.data <- short[,13:29] # species
+env_s.data <- short[,31:39] # temp, DO %, DO mgL, pH, chloro, bga
+site_s.data <- short[,1:3] # site, region, season
+```
+
+```{r, include=FALSE}
+swel_col <- c("#E69F00", "#CC79A7", "#0072B2", "#56B4E9")
+```
+
+The macrofaunal community; raw untransformed counts:
+
+```{r}
+par(mar=c(2,10,2,2)) # adjusts the margins
+boxplot(ds[,16:32],horizontal = TRUE,las=2, main="Abundance")
+```
+
+# Calculate Alpha diversity
+
+    A)  Shannon's Diversity H'
+    B)  Observed Richness (\# of species)
+    C)  Pielou's Evennness
+    D)  Inverse Simposon Diversity
+    E)  Renyi's Entropy
+
+```{r}
+# Shannon's H'
+H_short <- diversity(short.data)
+H_long <- diversity(ds.data)
+
+# Observed Richness
+richness_short <- specnumber(short.data)  
+richness_long <- specnumber(ds.data) 
+
+# Pielou's Evenness
+evenness_short <- H_short/log(richness_short)
+evenness_long <- H_long/log(richness_long)
+
+# Inverse simpson
+inv_simpson_long <- diversity(ds.data, index = "invsimpson", base = 2)
+inv_simpson_short <- diversity(short.data, index = "invsimpson", base = 2)
+
+# Renyi entropy as diversity measure
+R <- renyi(ds.data, scales = 2)
+N2 <- renyi(ds.data, scales = 2, hill = TRUE)  # inverse simpson
+k <- sample(nrow(ds.data), 6)
+R <- renyi(ds.data[k,])
+
+Rs <- renyi(short.data, scales = 2)
+N2s <- renyi(short.data, scales = 2, hill = TRUE)  # inverse simpson
+ks <- sample(nrow(short.data), 8)
+Rs <- renyi(short.data[ks,])
+```
+
+Some data exploration... look at the Renyi entropy of the 8 samples from the condensed data-set. This includes a plot for each site and season, and it is clear there are differences between the sites and seasons. There is also some evidence of differences through 'time' (i.e. x-axis) at some of the sites/seasons. We are looking at where the circles fall within the mean (pink dashed lines) and standard deviation (green dashed lines) in each sample. 
+
+```{r}
+plot(Rs, main = "Renyi Diversity plot; shortened dataset")
+```
+
+Create alpha diversity data-frame including environmental data.
+
+```{r}
+# long data 
+alpha <- cbind(shannon = H_long, richness = richness_long, pielou = evenness_long, inv_simpson = inv_simpson_long, env.data, site.data)
+
+# short data
+alpha_s <- cbind(shannon = H_short, richness = richness_short, pielou = evenness_short, inv_simpson = inv_simpson_short, env_s.data, site_s.data)
+```
+
+# Plot Alpha Diversity
+
+These are violin plots to visualize the distribution of the diversity
+metrics at each site.
+
+```{r, echo=FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
+plot.shan <- ggplot(alpha, aes(x = site, y = shannon, fill = site)) +
+  geom_violin() +
+  scale_fill_manual(values = swel_col) +
+  ylab("Shannon's H'") + 
+  xlab("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+  stat_compare_means(method = "anova", label.y = 2.5)+      # Add global p-value
+  stat_compare_means(label = "p.signif", method = "t.test",
+                     ref.group = ".all.")
+
+plot.rich <-ggplot(alpha, aes(x = site, y = richness, fill = site)) +
+  geom_violin() +
+  scale_fill_manual(values = swel_col) +
+  ylab("Species Richness") +
+  xlab("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+  stat_compare_means(method = "anova", label.y = 13)+      # Add global p-value
+  stat_compare_means(label = "p.signif", method = "t.test",
+                     ref.group = ".all.")
+
+plot.even <- ggplot(alpha, aes(x = site, y = pielou, fill = site)) +
+  geom_violin() +
+  scale_fill_manual(values = swel_col) +
+  ylab("Pielou's Evenness") +
+  xlab("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+  stat_compare_means(method = "anova",, label.y = 1.2) +      # Add global p-value
+  stat_compare_means(label = "p.signif", method = "t.test",
+                     ref.group = ".all.")
+
+plot.inv_simpson <- ggplot(alpha, aes(x = site, y = inv_simpson, fill = site)) +
+  geom_violin() +
+  scale_fill_manual(values = swel_col) +
+  ylab("Inverse Simpson") +
+  xlab("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+  stat_compare_means(method = "anova", label.y = 8)+      # Add global p-value
+  stat_compare_means(label = "p.signif", method = "t.test",
+                     ref.group = ".all.")
+legend <- get_legend(plot.inv_simpson)
+
+plot_grid(plot.shan + theme(legend.position = "none"), 
+          plot.rich + theme(legend.position = "none"), 
+          plot.even + theme(legend.position = "none"), 
+          plot.inv_simpson + theme(legend.position = "none"), ncol = 4)
+
+```
+
+A bit easier to visualize with the condensed, short dataset:
+
+```{r, echo=FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
+plot.shan <- ggplot(alpha_s, aes(x = site, y = shannon, colour = site, shape = season)) +
+  geom_point(aes(shape = factor(season)), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  ylab("Shannon's H'") + 
+  xlab("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+
+plot.rich <-ggplot(alpha_s, aes(x = site, y = richness, colour = site, shape = season)) +
+  geom_point(aes(shape = factor(season)), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  ylab("Species Richness") +
+  xlab("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+
+plot.even <- ggplot(alpha_s, aes(x = site, y = pielou, colour = site, shape = season)) +
+  geom_point(aes(shape = factor(season)), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  ylab("Pielou's Evenness") +
+  xlab("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+
+plot.inv_simpson <- ggplot(alpha_s, aes(x = site, y = inv_simpson, colour = site, shape = season)) +
+  geom_point(aes(shape = factor(season)), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  ylab("Inverse Simpson") +
+  xlab("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+legend <- get_legend(plot.inv_simpson)
+
+plot_grid(plot.shan + theme(legend.position = "none"), 
+          plot.rich + theme(legend.position = "none"), 
+          plot.even + theme(legend.position = "none"),
+          plot.inv_simpson + theme(legend.position = "none"),
+          legend, rel_heights = c(1,1,1,1,0.5), ncol = 5)
+
+```
+
+These graphs illustrate the differences between alpha diversity metrics
+and the relationship between species richness, Pielou's evenness, and
+Shannon's H'. Punta Caracol and Pastores are two sites with similar
+Shannon's H' scores, however, this is resultant of distinct mechanisms.
+P. Caracol has a large number of species (high species richness) but is
+relatively uneven (low Pielou's Evenness), resulting in a moderate
+Shannon's H'. Pastores, in contrast, has a small number of species but
+is very even, also resulting in a moderate Shannon's H'. Alpha diversity
+is structured very differently at P. Caracol compared with Pastores, but
+if we had used Shannon's H' alone we may not have identified these
+important differences.
+
+Almirante has relatively how Shannon's H', which is matched by low
+species richness and high evenness. From the large difference between
+the Cristobal point, it appears that the season is important in driving
+alpha diversity measures (H', richness and evenness to a lesser extent).
+
+# Environmental Effects
+
+Simple linear models between diversity metrics and environmental
+conditions.
+
+    A)  Temperature (Celsius)
+    B)  Salinity (psu)
+    C)  Dissolved Oxygen or 'DO' (mg/L)
+    D)  pH (NBS scale)
+    E)  Chlorophyll concentration (ug/L)
+    F)  Cyanobacteria/Blue Green Algae concentration (ug/L)
+
+First, with the full dataset, assess relationships between Shannon's
+Diversity and the environmental conditions. Additionally, look at the
+same relationships within the hypoxic and normoxic season (HS and NS).
+
+```{r, eval=FALSE, echo=TRUE}
+summary(lm(shannon ~ temp, alpha))
+summary(lm(shannon ~ sal_psu, alpha)) # negative, significant *
+summary(lm(shannon ~ DO_mgL, alpha)) # positive, sig. ***
+summary(lm(shannon ~ pH, alpha)) # positive, sig. ***
+summary(lm(shannon ~ as.numeric(Chlorophyll_ugL), alpha)) 
+summary(lm(shannon ~ as.numeric(BGA_ugL), alpha)) 
+
+alpha1 <- alpha[alpha$season != "HS",] # normoxic season
+summary(lm(shannon ~ temp, alpha1))
+summary(lm(shannon ~ sal_psu, alpha1)) 
+summary(lm(shannon ~ DO_mgL, alpha1)) # positive, sig. ***
+summary(lm(shannon ~ pH, alpha1))  # positive, sig. **
+summary(lm(shannon ~ as.numeric(Chlorophyll_ugL), alpha1))  
+summary(lm(shannon ~ as.numeric(BGA_ugL), alpha1)) # negative, sig * only in reduced data-set
+
+alpha2 <- alpha[alpha$season == "HS",] #hypoxic season
+summary(lm(shannon ~ temp, alpha2))
+summary(lm(shannon ~ sal_psu, alpha2)) # negative, sig. ** 
+summary(lm(shannon ~ DO_mgL, alpha2)) # positive, sig. ***
+summary(lm(shannon ~ pH, alpha2)) # positive, sig. ***
+summary(lm(shannon ~ as.numeric(Chlorophyll_ugL), alpha2)) 
+summary(lm(shannon ~ as.numeric(BGA_ugL), alpha2)) 
+```
+
+<details>
+
+<summary>
+
+Detailed results of Alpha Diversity & Environmental Parameter ANOVA tests
+
+</summary>
+
+```{r, eval=TRUE, echo=TRUE}
+summary(lm(shannon ~ temp, alpha))
+summary(lm(shannon ~ sal_psu, alpha)) # negative, significant *
+summary(lm(shannon ~ DO_mgL, alpha)) # positive, sig. ***
+summary(lm(shannon ~ pH, alpha)) # positive, sig. ***
+summary(lm(shannon ~ as.numeric(Chlorophyll_ugL), alpha)) 
+summary(lm(shannon ~ as.numeric(BGA_ugL), alpha)) 
+
+alpha1 <- alpha[alpha$season != "HS",] # normoxic season
+summary(lm(shannon ~ temp, alpha1))
+summary(lm(shannon ~ sal_psu, alpha1)) 
+summary(lm(shannon ~ DO_mgL, alpha1)) # positive, sig. ***
+summary(lm(shannon ~ pH, alpha1))  # positive, sig. **
+summary(lm(shannon ~ as.numeric(Chlorophyll_ugL), alpha1))  
+summary(lm(shannon ~ as.numeric(BGA_ugL), alpha1)) # negative, sig * only in reduced data-set
+
+alpha2 <- alpha[alpha$season == "HS",] #hypoxic season
+summary(lm(shannon ~ temp, alpha2))
+summary(lm(shannon ~ sal_psu, alpha2)) # negative, sig. ** 
+summary(lm(shannon ~ DO_mgL, alpha2)) # positive, sig. ***
+summary(lm(shannon ~ pH, alpha2)) # positive, sig. ***
+summary(lm(shannon ~ as.numeric(Chlorophyll_ugL), alpha2)) 
+summary(lm(shannon ~ as.numeric(BGA_ugL), alpha2)) 
+```
+
+</details>
+
+The linear model outputs demonstrate that there is a significant
+relationship between DO and pH and Shannon's H' throughout Almirante Bay
+(in the full dataset). DO and pH are always important regardless of the
+season. However, in the hypoxic season, lower diversity is related to
+higher salinity values. This relationship is not present during the
+normoxic season.
+
+Linear model output demonstrates a significant positive relationship
+between both DO and pH and Shannon's H' Diversity across Almirante Bay.
+We can then fit the significant regression lines to our plots using the
+geom_smooth function in the r package ggplot2.
+
+```{r, echo=FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
+DO.H <- ggplot(alpha_s, aes(x = DO_mgL, y = shannon, colour = site)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  #geom_smooth(method = "lm", aes(color = season),  fill = "grey90") +
+  geom_point(aes(shape = season), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(DO ~ (mg~L^-1))) + 
+  ylab("") +
+  ylim(1,2.3) +
+  theme_bw()
+
+DO.H.full <- ggplot(alpha, aes(x = DO_mgL, y = shannon, colour = site, shape=season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(aes(shape = season), size = 2) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(DO ~ (mg~L^-1))) + 
+  ylab("") +
+  ylim(1,2.3) +
+  theme_bw()
+
+plot_grid(DO.H + theme(legend.position = 'none'),
+          DO.H.full + theme(legend.position = 'none'),
+          legend, rel_heights = c(1,1,0.5),  ncol = 3)
+```
+
+The other significant parameters, with the condensed short dataset:
+
+```{r, echo=FALSE, eval= FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
+# plots with full dataset
+sal.H <- ggplot(alpha, aes(x = sal_psu, y = shannon, colour = site, shape = season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(aes(shape = factor(season)), size = 2, alpha=0.5) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(salinity ~ (psu))) + 
+  ylab("") +
+  ylim(1,2.3) +
+  theme_bw()
+
+pH.H <- ggplot(alpha, aes(x = pH, y = shannon, colour = site, shape = season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey85") +
+  geom_point(aes(shape = factor(season)), size = 2, alpha=0.5) +
+  scale_colour_manual(values = swel_col) +
+  xlab("pH") + 
+  ylab("") +
+  ylim(1,2.3) +
+  theme_bw()
+
+#bga.H <- ggplot(alpha, aes(x = as.numeric(BGA_ugL), y = shannon, colour = site, shape = season)) +
+#  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+#  geom_point(aes(shape = factor(season)), size = 2, alpha=0.5) +
+#  scale_colour_manual(values = swel_col) +
+#  xlab("BGA (ugL)") + 
+#  ylab("") +
+#  ylim(1,2.3) +
+#  theme_bw()
+legend <- get_legend(pH.H)
+
+plot_grid(pH.H + theme(legend.position = 'none'),
+          sal.H + theme(legend.position = 'none'), 
+          #bga.H + theme(legend.position = 'none'),
+          legend, rel_heights = c(1,1,0.5),  ncol = 4)
+```
+
+```{r, echo=FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
+pH.H <- ggplot(alpha_s, aes(x = pH, y = shannon, colour = site, shape = season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(aes(shape = factor(season)), size = 3, alpha=1) +
+  scale_colour_manual(values = swel_col) +
+  xlab("pH") + 
+  ylab("") +
+  ylim(1,2.3) +
+  theme_bw()
+
+sal.H <- ggplot(alpha_s, aes(x = sal_psu, y = shannon, colour = site, shape = season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(aes(shape = factor(season)), size = 3, alpha=1) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(salinity ~ (psu))) + 
+  ylab("") +
+  ylim(1,2.3) +
+  theme_bw()
+
+bga.H <- ggplot(alpha_s, aes(x = as.numeric(BGA_ugL), y = shannon, colour = site, shape = season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(aes(shape = factor(season)), size = 3, alpha=1) +
+  scale_colour_manual(values = swel_col) +
+  xlab("BGA (ugL)") + 
+  ylab("") +
+  ylim(1,2.3) +
+  theme_bw()
+legend <- get_legend(bga.H)
+
+plot_grid(pH.H + theme(legend.position = 'none'),
+          sal.H + theme(legend.position = 'none'), 
+          bga.H + theme(legend.position = 'none'),
+          legend, rel_heights = c(1,1,1,0.5),  ncol = 5)
+```
+
+Now we look at the same relationships with respect to species richness.
+
+```{r, eval=FALSE, echo=TRUE}
+summary(lm(richness ~ temp, alpha))
+summary(lm(richness ~ sal_psu, alpha)) # negative, sig.* higher richness with more rain
+summary(lm(richness ~ DO_mgL, alpha)) # positive, sig.*** - higher richness with more oxygen
+summary(lm(richness ~ pH, alpha)) # positive, sig.*** - higher richness with less acidity
+summary(lm(richness ~ as.numeric(Chlorophyll_ugL), alpha)) 
+summary(lm(richness ~ as.numeric(BGA_ugL), alpha)) 
+
+alpha1 <- alpha[alpha$season != "HS",] # normoxic season
+summary(lm(richness ~ temp, alpha1)) 
+summary(lm(richness ~ sal_psu, alpha1)) 
+summary(lm(richness ~ DO_mgL, alpha1)) # positive, sig.***
+summary(lm(richness ~ pH, alpha1)) 
+summary(lm(richness ~ as.numeric(Chlorophyll_ugL), alpha1)) # negative, sig.* - less richness with more chlorophyl
+summary(lm(richness ~ as.numeric(BGA_ugL), alpha1)) # negative, sig.* - less richness with more BGA
+
+alpha2 <- alpha[alpha$season == "HS",] #hypoxic season
+summary(lm(richness ~ temp, alpha2))
+summary(lm(richness ~ sal_psu, alpha2)) # negative, sig.*** - less richness with higher salinity 
+summary(lm(richness ~ DO_mgL, alpha2)) # positive, sig.*** - higher richness with more oxgyen
+summary(lm(richness ~ pH, alpha2)) # positive, sig.*** - higher richness with higher pH
+summary(lm(richness ~ as.numeric(Chlorophyll_ugL), alpha2))
+summary(lm(richness ~ as.numeric(BGA_ugL), alpha2)) 
+```
+
+<details>
+
+<summary>
+
+Detailed results Richness & Environmental Parameter ANOVA tests
+
+</summary>
+
+```{r, eval=TRUE, echo=TRUE}
+summary(lm(richness ~ temp, alpha))
+summary(lm(richness ~ sal_psu, alpha)) # negative, sig.* higher richness with more rain
+summary(lm(richness ~ DO_mgL, alpha)) # positive, sig.*** - higher richness with more oxygen
+summary(lm(richness ~ pH, alpha)) # positive, sig.*** - higher richness with less acidity
+summary(lm(richness ~ as.numeric(Chlorophyll_ugL), alpha)) 
+summary(lm(richness ~ as.numeric(BGA_ugL), alpha)) 
+
+alpha1 <- alpha[alpha$season != "HS",] # normoxic season
+summary(lm(richness ~ temp, alpha1)) 
+summary(lm(richness ~ sal_psu, alpha1)) 
+summary(lm(richness ~ DO_mgL, alpha1)) # positive, sig.***
+summary(lm(richness ~ pH, alpha1)) 
+summary(lm(richness ~ as.numeric(Chlorophyll_ugL), alpha1)) # negative, sig.* - less richness with more chlorophyl
+summary(lm(richness ~ as.numeric(BGA_ugL), alpha1)) # negative, sig.* - less richness with more BGA
+
+alpha2 <- alpha[alpha$season == "HS",] #hypoxic season
+summary(lm(richness ~ temp, alpha2))
+summary(lm(richness ~ sal_psu, alpha2)) # negative, sig.*** - less richness with higher salinity 
+summary(lm(richness ~ DO_mgL, alpha2)) # positive, sig.*** - higher richness with more oxgyen
+summary(lm(richness ~ pH, alpha2)) # positive, sig.*** - higher richness with higher pH
+summary(lm(richness ~ as.numeric(Chlorophyll_ugL), alpha2))
+summary(lm(richness ~ as.numeric(BGA_ugL), alpha2)) 
+```
+
+</details>
+
+Salinity, oxygen and pH have the greatest effect on species richness.
+During the normoxic season, increasing chlorophyll and BGA levels
+correspond to decreasing richness. This is not true in the hypoxic
+season (no relationship).
+
+Here we can see these relationships by plotting species richness against
+pH, DO, saliniy, BGA, and chlorophyll.
+
+```{r, echo=FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
+DO.rich <- ggplot(alpha_s, aes(x = DO_mgL, y = richness, colour = site)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(DO ~ (mg~L^-1))) + 
+  ylab("Species Richness") +
+  ylim(5,15) +
+  theme_bw()
+
+sal.rich <- ggplot(alpha_s, aes(x = sal_psu, y = richness, colour = site)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(salinity ~ (psu))) + 
+  ylab("") +
+  ylim(5,15) +
+  theme_bw()
+
+pH.rich <- ggplot(alpha_s, aes(x = pH, y = richness, colour = site)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey85") +
+  geom_point(size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab("pH") + 
+  ylab("") +
+  ylim(5,15) +
+  theme_bw()
+
+chloro.rich <- ggplot(alpha_s, aes(x = as.numeric(Chlorophyll_ugL), y = richness, colour = site, shape=season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(aes(shape = factor(season)), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab("Chlorophyll (ug/L)") + 
+  ylab("") +
+  ylim(5,15) +
+  theme_bw()
+
+bga.rich <- ggplot(alpha_s, aes(x = as.numeric(BGA_ugL), y = richness, colour = site, shape=season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(aes(shape = factor(season)), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab("BGA (ug/L)") + 
+  ylab("") +
+  ylim(5,15) +
+  theme_bw()
+legend <- get_legend(bga.rich)
+
+plot_grid(DO.rich + theme(legend.position = 'none'),
+          pH.rich + theme(legend.position = 'none'), 
+          sal.rich + theme(legend.position = 'none'), 
+          chloro.rich + theme(legend.position = 'none'), 
+          bga.rich + theme(legend.position = 'none'), 
+          legend, rel_heights = c(1,1,1,1,1,0.5),  ncol = 6)
+```
+
+Check the evenness and environmental parameters:
+
+```{r, eval=FALSE, echo=TRUE}
+summary(lm(pielou ~ temp, alpha))
+summary(lm(pielou ~ sal_psu, alpha)) # positive, significant - higher evenness with more saline
+summary(lm(pielou ~ DO_mgL, alpha)) # negative, significant - lower evenness with more oxygen
+summary(lm(pielou ~ pH, alpha)) 
+summary(lm(pielou ~ as.numeric(Chlorophyll_ugL), alpha)) 
+summary(lm(pielou ~ as.numeric(BGA_ugL), alpha)) 
+
+alpha1 <- alpha[alpha$season != "HS",] # normoxic season
+summary(lm(pielou ~ temp, alpha1)) 
+summary(lm(pielou ~ sal_psu, alpha1)) # positive, significant - higher evenness with higher salinity
+summary(lm(pielou ~ DO_mgL, alpha1)) 
+summary(lm(pielou ~ pH, alpha1)) 
+summary(lm(pielou ~ as.numeric(Chlorophyll_ugL), alpha1)) 
+summary(lm(pielou ~ as.numeric(BGA_ugL), alpha1)) 
+
+alpha2 <- alpha[alpha$season == "HS",] #hypoxic season
+summary(lm(pielou ~ temp, alpha2))
+summary(lm(pielou ~ sal_psu, alpha2)) # marginally significant
+summary(lm(pielou ~ DO_mgL, alpha2)) # marginally significant
+summary(lm(pielou ~ pH, alpha2)) 
+summary(lm(pielou ~ as.numeric(Chlorophyll_ugL), alpha2)) # marginally significant
+summary(lm(pielou ~ as.numeric(BGA_ugL), alpha2)) # negative, significant - low evenness with more BGA
+```
+
+
+<details>
+
+<summary>
+
+Detailed results Evenness & Environmental Parameter ANOVA tests
+
+</summary>
+
+```{r, eval=TRUE, echo=TRUE}
+summary(lm(pielou ~ temp, alpha))
+summary(lm(pielou ~ sal_psu, alpha)) # positive, significant - higher evenness with more saline
+summary(lm(pielou ~ DO_mgL, alpha)) # negative, significant - lower evenness with more oxygen
+summary(lm(pielou ~ pH, alpha)) 
+summary(lm(pielou ~ as.numeric(Chlorophyll_ugL), alpha)) 
+summary(lm(pielou ~ as.numeric(BGA_ugL), alpha)) 
+
+alpha1 <- alpha[alpha$season != "HS",] # normoxic season
+summary(lm(pielou ~ temp, alpha1)) 
+summary(lm(pielou ~ sal_psu, alpha1)) # positive, significant - higher evenness with higher salinity
+summary(lm(pielou ~ DO_mgL, alpha1)) 
+summary(lm(pielou ~ pH, alpha1)) 
+summary(lm(pielou ~ as.numeric(Chlorophyll_ugL), alpha1)) 
+summary(lm(pielou ~ as.numeric(BGA_ugL), alpha1)) 
+
+alpha2 <- alpha[alpha$season == "HS",] #hypoxic season
+summary(lm(pielou ~ temp, alpha2))
+summary(lm(pielou ~ sal_psu, alpha2)) # marginally significant
+summary(lm(pielou ~ DO_mgL, alpha2)) # marginally significant
+summary(lm(pielou ~ pH, alpha2)) 
+summary(lm(pielou ~ as.numeric(Chlorophyll_ugL), alpha2)) # marginally significant
+summary(lm(pielou ~ as.numeric(BGA_ugL), alpha2)) # negative, significant - low evenness with more BGA
+```
+
+</details>
+
+Plots of Evenness.
+
+```{r, echo=FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
+DO.even <- ggplot(alpha_s, aes(x = DO_mgL, y = pielou, colour = site)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(DO ~ (mg~L^-1))) + 
+  ylab("Pielou's Evenness") +
+  ylim(0.6,1) +
+  theme_bw()
+
+sal.even <- ggplot(alpha_s, aes(x = sal_psu, y = pielou, colour = site)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey90") +
+  geom_point(size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(salinity ~ (psu))) + 
+  ylab("") +
+  ylim(0.6,1) +
+  theme_bw()
+
+chloro.even <- ggplot(alpha_s, aes(x = as.numeric(Chlorophyll_ugL), y = pielou, 
+      colour = site, shape =season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey85") +
+  geom_point(aes(shape = factor(season)), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab(bquote(Chlorophyll ~ (ug~L^-1))) + 
+  ylab("") +
+  ylim(0.6,1) +
+  theme_bw()
+
+bga.even <- ggplot(alpha_s, aes(x = as.numeric(BGA_ugL), y = pielou, colour = site, shape =season)) +
+  geom_smooth(method = "lm", colour = "black", fill = "grey85") +
+  geom_point(aes(shape = factor(season)), size = 3) +
+  scale_colour_manual(values = swel_col) +
+  xlab("BGA") + 
+  ylab("") +
+  ylim(0.6,1) +
+  theme_bw()
+legend <- get_legend(bga.even)
+
+plot_grid(DO.even + theme(legend.position = 'none'), 
+          sal.even + theme(legend.position = 'none'), 
+          chloro.even + theme(legend.position = 'none'), 
+          bga.even + theme(legend.position = 'none'), 
+          legend, rel_heights = c(1,1,1,1,0.5),  ncol = 5)
+```
+
+# Region Effects
+
+First, we look at the effect of region on diversity. The outer bay (OB)
+includes the two normoxic sites (Cristobal and P. Caracol) and the inner
+bay (IB)inclued the two hypoxic sites.
+
+```{r}
+anova <- aov(shannon ~ Region, alpha) # H'  significant ***
+summary(anova)
+
+anova <- aov(richness ~ Region, alpha) # Richness significant  ***
+summary(anova)
+
+anova <- aov(pielou ~ Region, alpha) # Evenness significant  ***
+summary(anova)
+```
+
+Boxplots showing the significant differences between different diversity
+metrics and region.
+
+```{r, echo=FALSE}
+H_region <- ggplot(alpha, aes(x = Region, y = shannon, fill = Region)) +
+  geom_boxplot(aes(fill = Region)) +
+  scale_colour_manual(values = swel_col) +
+  scale_fill_manual(values = c("grey60", "grey90"), guide = FALSE) +
+  ylab("Shannon's H'") + 
+  xlab('') +
+  theme_bw() +
+  stat_compare_means(label = "p.signif")
+
+Rich_region <- ggplot(alpha, aes(x = Region, y = richness, fill = Region)) +
+  geom_boxplot(aes(fill = Region)) +
+  scale_colour_manual(values = swel_col) +
+  scale_fill_manual(values = c("grey60", "grey90"), guide = FALSE) +
+  ylab("Species richness") + 
+  xlab('Region')+
+  theme_bw() +
+  stat_compare_means(label = "p.signif")
+
+Even_region <- ggplot(alpha, aes(x = Region, y = pielou, fill = Region)) +
+  geom_boxplot(aes(fill = Region)) +
+  # geom_point(size = 3, aes(colour = site)) + 
+  scale_fill_manual(values = c("grey60", "grey90"), guide = FALSE) +
+  ylab("Pielou evenness") + 
+  xlab('')+
+  theme_bw()+
+  stat_compare_means(label = "p.signif")
+
+plot_grid(H_region + theme(legend.position = 'none'), 
+          Rich_region + theme(legend.position = 'none'), 
+          Even_region + theme(legend.position = 'none'), 
+          rel_heights = c(1,1,1),  ncol = 3)
+```
+
+These one-way ANOVA tests reveals a significant relationship between
+region (a categorical variable) and each diversity metric. Greater
+macrofaunal diversity and richiness was observed in the outer bay
+compared to the inner bay. The outer bay had less evenness than the
+inner bay.
+
+# Seasonal Effects
+
+Does seasonality impact H' diversity, richness and evenness?
+
+```{r, eval=TRUE}
+anova_int_shannon <- aov(shannon ~ season *site, alpha)
+summary(anova_int_shannon) # site X season interaction exists when 0's are kept in the dataset
+
+anova_int_rich <- aov(richness ~ season *site, alpha)
+summary(anova_int_rich) # site X season interaction exists when 0's are kept in the dataset
+
+anova__int_even <- aov(pielou ~ season *site, alpha)
+summary(anova__int_even) # not significant
+
+```
+
+```{r, echo=FALSE}
+# my_comparisons <- list( c("Pastores", "Cristobal"), c("Almirante", "Cristobal"), c("Almirante", "P_Caracol") )
+ggplot(alpha, aes(x = site, y = shannon)) +
+  geom_boxplot(aes(fill = season)) +
+  scale_fill_manual(values = c("grey60", "grey90")) +
+  ylab("Shannon's H'") + 
+  xlab('site')+
+  theme_bw() +
+  theme(legend.position="bottom") +
+  #stat_compare_means(comparisons = my_comparisons)+ # Add pairwise comparisons p-value
+  #stat_compare_means(method = "anova", label.y=3) +  # Add global p-value
+  #stat_compare_means(label = "p.signif", method = "t.test",
+  #                   ref.group = "Pastores")     # Pairwise comparison against reference
+  stat_compare_means(label = "p.signif", aes(group = season)) # based on wilcocon
+
+```
+
+The only site that in which the macrofaunal diversity is affected by
+seasonality is P. Caracol. Surprisingly, the diversity is higher during
+the hypoxic season compared to the normoxic season.
+
+We can see this using the package *ggpubr* and comparing the means of
+variable 'shannon' (i.e. Shannon's H' diversity) in the different site
+groups formed by the grouping variable 'season.' P-values/significance
+tests are based on the non-parametric wilcoxon test.
+
+```{r, echo=FALSE}
+ggplot(alpha, aes(x = site, y = richness)) +
+  geom_boxplot(aes(fill = season)) +
+  scale_fill_manual(values = c("grey60", "grey90")) +
+  ylab("Species Richness'") + 
+  xlab('site')+
+  theme_bw() + 
+  theme(legend.position="bottom") +
+  stat_compare_means(label = "p.signif", aes(group = season))
+```
+
+During the normoxic season the macrofaunal community at Pastores has
+higher species richness, compared to the hypoxic season. Only at
+Pastores is species richness significantly influenced by season.
+
+```{r, echo=FALSE}
+ggplot(alpha, aes(x = site, y = pielou)) +
+  geom_boxplot(aes(fill = season)) +
+  # geom_point(size = 3, aes(colour = site)) + 
+  scale_fill_manual(values = c("grey60", "grey90")) +
+  ylab("Species Evenness'") + 
+  xlab('site')+
+  theme_bw() + 
+  theme(legend.position="bottom") +
+  stat_compare_means(label = "p.signif", aes(group = season))
+```
+
+Yes. Diversity appears to significantly change due to season in some
+sites, as seen with a significant siteX season interaction (H' and
+richness). All the samples without any occurances were considered
+leaving many 'zeros' and not fitting into the assumptions of ANOVA very
+well.
+
+# Temporal Effects
+
+```{r, eval=TRUE}
+anova_week_even <- aov(pielou ~ factor(week) * site, alpha)
+summary(anova_week_even)
+```
+
+There is a significant effect of site, week and their interaction on Pielou's Evenness.
+
+```{r, echo=FALSE}
+p <- ggplot(alpha, aes(x = week, y = pielou, group = site, color =site)) +
+  geom_point(size = 1) +
+  scale_colour_manual(values = swel_col) +
+  ylab("Species Evenness'") + 
+  xlab('week')+
+  theme_classic() + 
+  theme(legend.position="bottom")
+p + geom_smooth(span = 0.2) +
+  facet_wrap(~site)
+```
+
+ From the graph here we see that Almirante is the most variable, with evenness decreases later in the year. 
+ 
+ And Shannon's H' Diversity?
+ 
+```{r, eval=TRUE}
+anova_week_H <- aov(shannon ~ week * site * season, alpha)
+summary(anova_week_H)
+```
+
+Only site is significant. 
+
+```{r, echo=FALSE}
+p2 <- ggplot(alpha, aes(x = week, y = shannon, group = site, color =site)) +
+  geom_point(size = 1) +
+  scale_colour_manual(values = swel_col) +
+  ylab("Species Diversity H'") + 
+  xlab('week')+
+  theme_classic() + 
+  theme(legend.position="bottom")
+p2 + geom_smooth(span = 0.2) +
+  facet_wrap(~site)
+```
+
+ What about Richness?
+ 
+```{r, eval=TRUE}
+anova_week_rich <- aov(richness ~ week * site * season, alpha)
+summary(anova_week_rich)
+```
+
+Only site is significant. No time interaction (via week)
+
+```{r, echo=FALSE}
+p3 <- ggplot(alpha, aes(x = week, y = richness, group = site, color =site)) +
+  geom_point(size = 1) +
+  scale_colour_manual(values = swel_col) +
+  ylab("Species Richness") + 
+  xlab('week')+
+  theme_classic() + 
+  theme(legend.position="bottom")
+p3 + geom_smooth(span = 0.2) +
+  facet_wrap(~site)
+```
+
