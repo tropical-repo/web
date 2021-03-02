@@ -26,6 +26,7 @@ library(vegan)
 library(ggplot2)
 library(viridis)
 library(cowplot)
+library(mvabund)
 ```
 
 ```{r include=FALSE, eval=TRUE}
@@ -253,9 +254,13 @@ paper):
 
 ## Site x Region
 
-```{r, eval=TRUE}
+```{r}
 M2 <- manyglm(ds_spp ~ ds$Region * ds$season, family="negative_binomial")
 M2 <- anova(M2)
+```
+
+```{r, eval=TRUE}
+M2 
 ```
 
 There were different species assemblages in the different regions (LRT =
@@ -297,11 +302,39 @@ Region). Only bivalves and caudofoveata are seasonally influenced (both molluscs
 ## Site x Time
 Week x Site
 
-```{r, eval=TRUE}
-model_wk <- manyglm(ds_spp ~ site * week, family="negative_binomial")
+```{r, eval=FALSE}
+model_wk <- manyglm(ds_spp ~ week, family="negative_binomial")
 M_output_wk <- anova(model_wk)
-M_output
 ```
+
+
+```{r, eval=TRUE}
+M_output_wk
+```
+
+```{r, eval=TRUE}
+model_pairs_wk <- anova(model_wk, pairwise.comp = site, nBoot = 199)
+model_pairs_wk
+```
+
+
+```{r, eval=TRUE}
+model_wk_site <- manyglm(ds_spp ~ site * week, family="negative_binomial")
+M_output_wk_site <- anova(model_wk_site)
+M_output_wk_site
+```
+```{r, eval=TRUE}
+model_pairs_wk <- anova(model_wk_site, pairwise.comp = site, nBoot = 199)
+model_pairs_wk
+```
+
+
+```{r, eval=TRUE}
+model_wk_site <- manyglm(ds_spp ~ site * week, family="negative_binomial")
+M_output_wk_site_uni <- anova(model_wk_site, p.uni="adjusted") 
+M_output_wk_site_uni
+```
+
 
 
 # Part 2: Visualizing Results
@@ -648,7 +681,7 @@ ordiellipse(pca, groups = site.data$site,
 
 
 ```{r include=FALSE, eval=TRUE}
-remove(list = ls())
+save.image(file="macrobetastats.RData")
 ```
 
 *Heavily borrowed code and text for this page from:
