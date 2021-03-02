@@ -26,6 +26,7 @@ library(ggplot2)
 library(cowplot)
 library(mvabund) 
 library(ggpubr)
+library(scales)
 
 remove(list = ls())
 ```
@@ -49,20 +50,18 @@ averaged by site and season. In order to run the workflow, you need the
 output files T_REPO_raw.csv or macro_short1.csv. See the [Data
 Availability](data-availability.html) page for complete details.
 
-```{r, echo=FALSE, fig.cap="Four study sites within Almirante Bay. Color gradient shows the oxygen saturation (%) approx. 1 meter above the seafloor. Oxygen was measured at 83 sites throughout the bay on Sept. 24, 2017 and values interpolated with ArcGIS.", out.width = '100%'}
-knitr::include_graphics("trepo_pics/trepo_DO_map.png")
-```
 
 ```{r, include=FALSE}
 ds <- read.csv("T_REPO_raw.csv", header = TRUE)
 ds <- ds[ds$size == "combined",] # select combinded size fraction
+ds$date <- as.Date(ds$date, format = "%m/%d/%y", tz = "EST")
 ds$site <- ordered(ds$site, levels = c("Pastores", "Almirante", "Cristobal", "P_Caracol"))
 ds <- ds[ds$week != "WXX",] # only looking at one year period corresponding to the microbial dataset
 
 ds.data <- ds[,16:32] # species matrix
 env.data <- ds[,34:40] # temp, DO %, DO mgL, pH, chloro, bga
-site.data <- ds[,1:6] # site, region, season, week, Region, season
-
+site.data <- ds[,1:7] # site, region, season, week, Region, season
+str(site.data)
 # Data Exploration with truncated data set, from dates matching microbial samples
 # This is the sum of occurrences at each site, in each season every other week (based on microbial sampling); environmental data is averaged by season and site
 short <- read.csv("macro_short1.csv", header = TRUE)
@@ -815,22 +814,25 @@ well.
 # Temporal Effects
 
 ```{r, eval=TRUE}
-anova_week_even <- aov(pielou ~ factor(week) * site, alpha)
-summary(anova_week_even)
+anova_time_even <- aov(pielou ~ date * site * season, alpha)
+summary(anova_time_even)
 ```
 
-There is a significant effect of site, week and their interaction on Pielou's Evenness.
+There is a significant effect of site and the interaction between date and site on Pielou's Evenness.
 
 ```{r, echo=FALSE}
-p <- ggplot(alpha, aes(x = week, y = pielou, group = site, color =site)) +
+p_even_time <- ggplot(alpha, aes(x = date, y = pielou, group = site, color =site)) +
   geom_point(size = 1) +
   scale_colour_manual(values = swel_col) +
   ylab("Species Evenness'") + 
   xlab('week')+
-  theme_classic() + 
-  theme(legend.position="bottom")
-p + geom_smooth(span = 0.2) +
-  facet_wrap(~site)
+  theme_bw() + 
+  theme(legend.position="bottom") + 
+  geom_smooth(span = 0.2, se = FALSE) +
+  scale_x_date(breaks = date_breaks("2 month"),                
+               labels = date_format("%b-%y")) 
+p_even_time
+#p_even_time + facet_wrap(~site)
 ```
 
  From the graph here we see that Almirante is the most variable, with evenness decreases later in the year. 
@@ -838,42 +840,51 @@ p + geom_smooth(span = 0.2) +
  And Shannon's H' Diversity?
  
 ```{r, eval=TRUE}
-anova_week_H <- aov(shannon ~ week * site * season, alpha)
-summary(anova_week_H)
+anova_date_H <- aov(shannon ~ date * site * season, alpha)
+summary(anova_date_H)
 ```
 
-Only site is significant. 
+Date, site  and their interaction is significant. P. Caracol and Cristobal are not effected by the temporal changes. The inner bay sites, Almirante and Pastores, however, experience decline in species' diversity during the hypoxic season, as well as periodically (Feb. 2018). Note, oxygen conditions were uncharacteristically low in Feb. 2018 explaining this decline in diversity during this period. 
 
 ```{r, echo=FALSE}
-p2 <- ggplot(alpha, aes(x = week, y = shannon, group = site, color =site)) +
+p_H_time <- ggplot(alpha, aes(x = date, y = shannon, group = site, color =site)) +
   geom_point(size = 1) +
   scale_colour_manual(values = swel_col) +
   ylab("Species Diversity H'") + 
-  xlab('week')+
-  theme_classic() + 
-  theme(legend.position="bottom")
-p2 + geom_smooth(span = 0.2) +
-  facet_wrap(~site)
+  xlab('date')+
+  theme_bw() + 
+  theme(legend.position="bottom") + 
+  geom_smooth(span = 0.2, se = FALSE) +
+  scale_x_date(breaks = date_breaks("2 month"),                
+               labels = date_format("%b-%y")) 
+p_H_time
+#p_H_time +  facet_wrap(~site)
 ```
 
  What about Richness?
  
 ```{r, eval=TRUE}
-anova_week_rich <- aov(richness ~ week * site * season, alpha)
-summary(anova_week_rich)
+anova_date_rich <- aov(richness ~ date * site * season, alpha)
+summary(anova_date_rich)
 ```
 
-Only site is significant. No time interaction (via week)
+Date and site are significant. No interactions. In terms of species richness, this plot shows that there is a general pattern with the highest richness in the most northern, outer bay site (P. Caracol), followed by Cristobal. Almirante and Pastores, the two inner bay sites are similar through the year. 
+
+All sites experience a reduction in species richness between Sept-Nov. 2017 (corresponding the the hypoxic event in the bay), as will as in February, July, November 2018. 
+
 
 ```{r, echo=FALSE}
-p3 <- ggplot(alpha, aes(x = week, y = richness, group = site, color =site)) +
+p_rich_time <- ggplot(alpha, aes(x = date, y = richness, group = site, color =site)) +
   geom_point(size = 1) +
   scale_colour_manual(values = swel_col) +
   ylab("Species Richness") + 
-  xlab('week')+
-  theme_classic() + 
-  theme(legend.position="bottom")
-p3 + geom_smooth(span = 0.2) +
-  facet_wrap(~site)
+  xlab('date')+
+  theme_bw() + 
+  theme(legend.position="bottom") + 
+  geom_smooth(span = 0.2, se = FALSE) +
+  scale_x_date(breaks = date_breaks("2 month"),                
+               labels = date_format("%b-%y")) 
+p_rich_time
+#p_rich_time +  facet_wrap(~site)
 ```
 

@@ -26,28 +26,34 @@ knitr::opts_chunk$set(echo = FALSE, eval = TRUE) # echo=true, visible code, eval
 
 From the previous workflows, we have determined that species abundance changes with the season and site. For example, of the 17 taxa indentified in our samples, Errantia is the only one affected by a significant site x season interaction. Others, such as Caudofoveata and Ostrocoda where affected by site differences, whereas Bivalves were affected by seasonality.  
 
-Significant Site Effects
 
--   Sedentaria 
-
--   Errantia 
-
--   Caudofoveata 
-
--   Ostracoda
-
-Significant Season Effects:
-
--   unidentified taxa
-
--   Caudofoveata
-
--   Bivalvia 
+| site         | season       | interaction |
+|--------------|--------------|-------------|
+| Sedentaria   |              |             |
+| Errantia     |              | Errantia    |
+| Caudofoveata | Caudofoveata |             |
+| Ostracods    |              |             |
+| unidentified | unidentified |             |
+|              |              |             |
+|              | Bivalvia     |             |
+: Taxa with significant site x season factors
 
 
-Significant Site X Season Interaction:
 
--   Errantia 
+| site         | week         | interaction  |
+|--------------|--------------|--------------|
+| Sedentaria   | Sedentaria   | Sedentaria   |
+| Errantia     |              |              |
+| Caudofoveata |              |              |
+| Ostracods    |              |              |
+| unidentified | unidentified | unidentified |
+|              | Sipuncula    |              |
+|              | Bivalvia     | Bivalvia     |
+|              | Gastropoda   | Gastropoda   |
+|              |              | Copepoda     |
+|              |              | Decapoda     |
+
+: Taxa with significant site x time factors
 
 Here we explore the biology and ecology of these taxa in more detail. 
 Where do these creatures live? What do they eat and how do they eat it?
