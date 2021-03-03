@@ -45,6 +45,7 @@ library(ape)
 library(microbiome)
 library(DECIPHER)
 library(kableExtra)
+library(metacoder)
 
 options(scipen=999)
 knitr::opts_current$get(c(
@@ -1000,7 +1001,7 @@ objects()
 remove(list = ls())
 load("page_build/trepo/da_ssu_wf_2.rdata")
 gdata::keep(ssu_ps_pime_merge_trim, sure = TRUE)
-#load("page_build/trepo/da_ssu_wf_part_3.rdata")
+load("page_build/trepo/da_ssu_wf_3.rdata")
 objects()
 ```
 
@@ -1158,10 +1159,12 @@ knitr::include_graphics("include/trepo/da/differential_heat_tree_merged_phyla.pn
 ```
 
 ```{r}
-save.image("page_build/trepo/taxa_ssu_wf_part_3.rdata")
+save.image("page_build/trepo/da_ssu_wf_3.rdata")
 ```
 
-```{r, eval=TRUE}
+<details markdown="1">
+<summary>This is code in progress. No peaking</summary>
+```{r}
 gamma_p <- obj %>% filter_taxa(taxon_names %in% c("Gammaproteobacteria"), subtaxa = TRUE)
 range.default(gamma_p$data$diff_table$log2_median_ratio, finite=TRUE)
 ```
@@ -1217,7 +1220,7 @@ obj_site$data$diff_table <- compare_groups(obj_site,
 ```
 
 
-```{r, eval=TRUE}
+```{r}
 bact_IB <- obj_site %>% filter_obs("diff_table", 
                                  treatment_1 == "ALMR", 
                                  treatment_2 == "PAST") %>%
@@ -1255,7 +1258,7 @@ obj_site %>%
           output_file = "files/trepo/da/figures/differential_heat_tree_merged_Bacteria_OB.png")
 ```
 
-```{r, eval=TRUE}
+```{r}
 gamma_p_IB <- obj_site %>% filter_obs("diff_table", 
                                  treatment_1 == "ALMR", 
                                  treatment_2 == "PAST") %>%
@@ -1297,12 +1300,7 @@ obj_site %>%
             overlap_avoidance = 2,
             output_file = "files/trepo/da/figures/differential_heat_tree_merged_gammaprot3.png")
 ```
-
-
-
-
-
-
+</details>
 
 ```{r include=FALSE, eval=TRUE}
 remove(list = ls())

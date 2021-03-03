@@ -1047,13 +1047,13 @@ head(get_taxa_unique(ps_work_merge, "Family"), 16)
 
 The taxmap objects.
 
-```{r, eval=TRUE}
+```{r, eval=FALSE}
 load("files/trepo/data-prep/rdata/ssu_taxmap.rdata")
 print(obj)
 ```
 
 
-```{r, eval=TRUE}
+```{r, eval=FALSE}
 load("files/trepo/data-prep/rdata/ssu_merge_taxmap.rdata")
 print(obj_merge)
 ```
@@ -1061,7 +1061,7 @@ print(obj_merge)
 
 The ampvis2 object.
 
-```{r, eval=TRUE}
+```{r, eval=FALSE}
 amp_data
 amp_merge_data
 ```

@@ -32,7 +32,7 @@ library(scales)
 ```{r include=FALSE, eval=TRUE}
 ## Load to build page # 2 trepo-macrobeta.rmd
 remove(list = ls())
-load("macrobetastats.RData")
+load("files/trepo/macrodata/macrobetastats.RData")
 ```
 
 > Hit the *Hide Code* button to hide the R code.
@@ -65,7 +65,7 @@ swel_col <- c("#E69F00", "#CC79A7", "#0072B2", "#56B4E9")
 ```
 
 ```{r, include=FALSE}
-ds <- read.csv("T_REPO_raw.csv", header = TRUE)
+ds <- read.csv("files/trepo/macrodata/T_REPO_raw.csv", header = TRUE)
 ds <- ds[ds$size == "combined",] 
 ds$site <- ordered(ds$site, levels = c("Pastores", "Almirante", "Cristobal", "P_Caracol"))
 ds <- ds[ds$week != "WXX",] 
@@ -267,12 +267,13 @@ Summary of the significant factors site x time:
 
 
 # Part 2: Visualizing Results
-## Taxa- temporal trends
+
+## Taxa-temporal trends
 
 Here we look at the full data set range (note stats above are only calling the same time period as the microbial data)
 
 ```{r, echo=FALSE}
-dsfull <- read.csv("T_REPO_raw.csv", header = TRUE)
+dsfull <- read.csv("files/trepo/macrodata/T_REPO_raw.csv", header = TRUE)
 dsfull <- dsfull[dsfull$size == "combined",]
 dsfull$date <- as.Date(dsfull$date, format = "%m/%d/%y", tz = "EST")
 dsfull$site <- ordered(dsfull$site, levels = c("Pastores", "Almirante", "Cristobal", "P_Caracol"))
@@ -498,7 +499,7 @@ We compare the dissimilarity in community composition between each site using tw
 This is the sum of occurrences at each site, in each season every other week (based on microbial sampling); environmental data is averaged by season and site.
 
 ```{r, include=FALSE}
-short <- read.csv("macro_short1.csv", header = TRUE)
+short <- read.csv("files/trepo/macrodata/macro_short1.csv", header = TRUE)
 short$site <- ordered(short$site, levels = c("Pastores", "Almirante", "Cristobal", "P_Caracol"))
 short.data <- short[,13:29] # species (meio.data)
 env_s.data <- short[,31:39] # temp, DO %, DO mgL, pH, chloro, bga (env.data)
@@ -750,9 +751,17 @@ p_DO
 
 
 
-```{r include=FALSE, eval=TRUE}
+```{r include=FALSE, eval=FALSE}
 save.image(file="macrobetastats.RData")
 
 #Heavily borrowed code and text for this page from:
 # <https://www.rpubs.com/roalle/mres_2019> - thank you!
 ```
+
+```{r include=FALSE, eval=TRUE}
+remove(list = ls())
+```
+
+## Source Code {.appendix}
+
+The source code for this page can be accessed on GitHub by [clicking this link](https://github.com/tropical-repo/web/blob/master/trepo-macrobeta.Rmd).

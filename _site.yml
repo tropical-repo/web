@@ -5,7 +5,7 @@ base_url: https://tropical-repo.github.io
 repository_url: https://github.com/tropical-repo/web/
 creative_commons: CC BY
 output_dir: "public_build"
-exclude: ["public", "working", "README.html", "README.md", "hack_code", "page_build", "files", "UNPOOLED", "MiSeq_SOP"]
+exclude: ["public", "working", "README.html", "README.md", "hack_code", "page_build", "files", "UNPOOLED", "MiSeq_SOP", "trepo_pics"]
 navbar:
   logo:
     image: assets/icon.png
@@ -13,8 +13,8 @@ navbar:
   search: true
   source_url: true
   right:
-    - text: "Introduction"
-      href: trepo-intro.html
+    - text: "Summary"
+      href: trepo-summary.html
     - text: "Physical"
       href: trepo-physical.html
     - text: "Macrofauna"

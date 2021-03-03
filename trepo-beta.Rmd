@@ -150,13 +150,8 @@ for (i in samp_ps) {
 objects()
 ```
 
-<details>
-
-<summary>
-
-Detailed results of Beta Dispersion & Permutation tests
-
-</summary>
+<details markdown="1">
+<summary>Detailed results of Beta Dispersion & Permutation tests</summary>
 
 ##### Permutation tests (ASV)
 
@@ -195,20 +190,8 @@ for (i in samp_ps) {
           rm(list = ls(pattern = "tmp_"))
         }
 }
-ssu_perm_pvalues <- read_delim("files/trepo/beta/tables/tmp.txt", 
-                               delim = "\n", 
-                               
-```
-
-```{r}
-
-```
-
-```{r}
-
-```
-
-```{col_names = "permutation results")}
+ssu_perm_pvalues <- read_delim("files/trepo/beta/tables/tmp.txt",  
+                               delim = "\n", col_names = "permutation results")
 ```
 
 ```{r, echo=FALSE}
@@ -252,13 +235,10 @@ ssu_ps_work_anosim_wunifrac <-
          grouping = ssu_ps_work_groups)
 ```
 
-<details>
 
-<summary>
+<details markdown="1">
+<summary>Detailed results of Significance tests for the ALL ASV data set</summary>
 
-Detailed results of Significance tests for the ALL ASV data set
-
-</summary>
 
 ```{r, eval=TRUE, echo=FALSE}
 cat("\n", "***ANOSIM for Jensen-Shannon Divergence, `jsd`***", "\n\n")
@@ -305,13 +285,8 @@ ssu_ps_pime_anosim_wunifrac <-
          grouping = ssu_ps_pime_groups)
 ```
 
-<details>
-
-<summary>
-
-Detailed results of Significance tests for PIME data set
-
-</summary>
+<details markdown="1">
+<summary>Detailed results of Significance tests for PIME data set</summary>
 
 ```{r, eval=TRUE, echo=FALSE}
 cat("\n", "***ANOSIM for Jensen-Shannon Divergence, `jsd`***", "\n\n")
@@ -365,15 +340,19 @@ gdata::keep(ssu_ps_work, ssu_ps_pime,
 objects()
 ```
 
-##### START HERE
 
 ## Beta Diversity Plots
 
 ```{r echo=FALSE, eval=FALSE}
 load("page_build/trepo/beta_ssu_full_part_2_wf.rdata")
 objects()
+```
+
+<details markdown="1">
+<summary>This is code in progress. No peaking</summary>
+
+```{r}
 source("hack_code/phyloseq_to_ampvis2.R")
-ssu_ps_work
 
 tmp_otu <- data.frame(t(otu_table(ssu_ps_work)))
 tmp_otu[] <- lapply(tmp_otu, as.numeric)
@@ -451,6 +430,8 @@ amp_ordinate(
   detailed_output = FALSE
 ) + scale_colour_manual(values = swel_col) 
 ```
+
+</details>
 
 Here we visualize the different distance matrices using several ordination methods on the ALL and PIME filtered data sets to access dissimilarity among sample.
 
@@ -553,7 +534,7 @@ dev.off()
 system("cp files/trepo/beta/figures/ssu_ps_work_beta_div_ord_plots.png include/trepo/beta/ssu_ps_work_beta_div_ord_plots.png")
 ```
 
-```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', eval=TRUE, fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
+```{r, echo=FALSE, eval=TRUE, warning=FALSE, layout='l-body-outset', fig.cap='**Left** = Jensen-Shannon Divergence, **middle** = UniFrac (unwieghted), **right** = UniFrac (wieghted); **Top** = NMDS, **bottom** = PCoA.'}
 knitr::include_graphics("include/trepo/beta/ssu_ps_work_beta_div_ord_plots.png")
 ```
 
@@ -1261,13 +1242,8 @@ for (i in samp_ps) {
 objects()
 ```
 
-<details>
-
-<summary>
-
-Detailed results of Beta Dispersion & Permutation tests
-
-</summary>
+<details markdown="1">
+<summary>Detailed results of Beta Dispersion & Permutation tests</summary>
 
 ##### Permutation tests (ASV)
 
@@ -1350,13 +1326,8 @@ ssu_ps_work_anosim_wunifrac <-
          grouping = ssu_ps_work_groups)
 ```
 
-<details>
-
-<summary>
-
-Detailed results of Significance tests for the ALL ASV data set
-
-</summary>
+<details markdown="1">
+<summary>Detailed results of Significance tests for the ALL ASV data set</summary>
 
 ```{r, eval=TRUE, echo=FALSE}
 cat("\n", "***PERMANOVA for Jensen-Shannon Divergence, `jsd`***", "\n\n")
@@ -1403,13 +1374,8 @@ ssu_ps_pime_anosim_wunifrac <-
          grouping = ssu_ps_pime_groups)
 ```
 
-<details>
-
-<summary>
-
-Detailed results of Significance tests for PIME data set
-
-</summary>
+<details markdown="1">
+<summary>Detailed results of Significance tests for PIME data set</summary>
 
 ```{r, eval=TRUE, echo=FALSE}
 cat("\n", "***PERMANOVA for Jensen-Shannon Divergence, `jsd`***", "\n\n")
