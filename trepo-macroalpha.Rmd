@@ -42,8 +42,11 @@ codefolder::generic(init = "show", query = "pre.sourceCode",
 
 # Summary
 
-This workflow contains diversity assessments for the **full** data set---all samples---and a condensed **short** data set---samples averaged by site and season. In order to run the workflow, you need the output files T_REPO_raw.csv or macro_short1.csv. See the [Data Availability](data-availability.html) page for complete details.
-
+This workflow contains diversity assessments for the **full** data
+set---all samples---and a condensed **short** data set---samples
+averaged by site and season. In order to run the workflow, you need the
+output files T_REPO_raw.csv or macro_short1.csv. See the [Data
+Availability](data-availability.html) page for complete details.
 
 ```{r, include=FALSE}
 ds <- read.csv("files/trepo/macrodata/T_REPO_raw.csv", header = TRUE)
@@ -113,7 +116,13 @@ ks <- sample(nrow(short.data), 8)
 Rs <- renyi(short.data[ks,])
 ```
 
-Some data exploration... look at the Renyi entropy of the 8 samples from the condensed data-set. This includes a plot for each site and season, and it is clear there are differences between the sites and seasons. There is also some evidence of differences through 'time' (i.e. x-axis) at some of the sites/seasons. We are looking at where the circles fall within the mean (pink dashed lines) and standard deviation (green dashed lines) in each sample. 
+Some data exploration... look at the Renyi entropy of the 8 samples from
+the condensed data-set. This includes a plot for each site and season,
+and it is clear there are differences between the sites and seasons.
+There is also some evidence of differences through 'time' (i.e. x-axis)
+at some of the sites/seasons. We are looking at where the circles fall
+within the mean (pink dashed lines) and standard deviation (green dashed
+lines) in each sample.
 
 ```{r}
 plot(Rs, main = "Renyi Diversity plot; shortened dataset")
@@ -231,9 +240,22 @@ plot_grid(plot.shan + theme(legend.position = "none"),
 
 ```
 
-These graphs illustrate the differences between alpha diversity metrics and the relationship between species richness, Pielou's evenness, and Shannon's H'. Punta Caracol and Pastores are two sites with similar Shannon's H' scores, however, this is resultant of distinct mechanisms. P. Caracol has a large number of species (high species richness) but is relatively uneven (low Pielou's Evenness), resulting in a moderate Shannon's H'. Pastores, in contrast, has a small number of species but is very even, also resulting in a moderate Shannon's H'. Alpha diversity is structured very differently at P. Caracol compared with Pastores, but if we had used Shannon's H' alone we may not have identified these important differences.
+These graphs illustrate the differences between alpha diversity metrics
+and the relationship between species richness, Pielou's evenness, and
+Shannon's H'. Punta Caracol and Pastores are two sites with similar
+Shannon's H' scores, however, this is resultant of distinct mechanisms.
+P. Caracol has a large number of species (high species richness) but is
+relatively uneven (low Pielou's Evenness), resulting in a moderate
+Shannon's H'. Pastores, in contrast, has a small number of species but
+is very even, also resulting in a moderate Shannon's H'. Alpha diversity
+is structured very differently at P. Caracol compared with Pastores, but
+if we had used Shannon's H' alone we may not have identified these
+important differences.
 
-Almirante has relatively how Shannon's H', which is matched by low species richness and high evenness. From the large difference between the Cristobal point, it appears that the season is important in driving alpha diversity measures (H', richness and evenness to a lesser extent).
+Almirante has relatively how Shannon's H', which is matched by low
+species richness and high evenness. From the large difference between
+the Cristobal point, it appears that the season is important in driving
+alpha diversity measures (H', richness and evenness to a lesser extent).
 
 # Environmental Effects
 
@@ -247,7 +269,9 @@ conditions.
     E)  Chlorophyll concentration (ug/L)
     F)  Cyanobacteria/Blue Green Algae concentration (ug/L)
 
-First, with the full dataset, assess relationships between Shannon's Diversity and the environmental conditions. Additionally, look at the same relationships within the hypoxic and normoxic season (HS and NS).
+First, with the full dataset, assess relationships between Shannon's
+Diversity and the environmental conditions. Additionally, look at the
+same relationships within the hypoxic and normoxic season (HS and NS).
 
 ```{r, eval=FALSE, echo=TRUE}
 summary(lm(shannon ~ temp, alpha))
@@ -278,7 +302,8 @@ summary(lm(shannon ~ as.numeric(BGA_ugL), alpha2))
 
 <summary>
 
-Detailed results of Alpha Diversity & Environmental Parameter ANOVA tests
+Detailed results of Alpha Diversity & Environmental Parameter ANOVA
+tests
 
 </summary>
 
@@ -309,9 +334,17 @@ summary(lm(shannon ~ as.numeric(BGA_ugL), alpha2))
 
 </details>
 
-The linear model outputs demonstrate that there is a significant relationship between DO and pH and Shannon's H' throughout Almirante Bay (in the full dataset). DO and pH are always important regardless of the season. However, in the hypoxic season, lower diversity is related to higher salinity values. This relationship is not present during the normoxic season.
+The linear model outputs demonstrate that there is a significant
+relationship between DO and pH and Shannon's H' throughout Almirante Bay
+(in the full dataset). DO and pH are always important regardless of the
+season. However, in the hypoxic season, lower diversity is related to
+higher salinity values. This relationship is not present during the
+normoxic season.
 
-Linear model output demonstrates a significant positive relationship between both DO and pH and Shannon's H' Diversity across Almirante Bay. We can then fit the significant regression lines to our plots using the geom_smooth function in the r package ggplot2.
+Linear model output demonstrates a significant positive relationship
+between both DO and pH and Shannon's H' Diversity across Almirante Bay.
+We can then fit the significant regression lines to our plots using the
+geom_smooth function in the r package ggplot2.
 
 ```{r, echo=FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
 DO.H <- ggplot(alpha_s, aes(x = DO_mgL, y = shannon, colour = site)) +
@@ -438,9 +471,13 @@ summary(lm(richness ~ as.numeric(Chlorophyll_ugL), alpha2))
 summary(lm(richness ~ as.numeric(BGA_ugL), alpha2)) 
 ```
 
+<details>
 
-<details markdown="1">
-<summary>Detailed results Richness & Environmental Parameter ANOVA tests</summary>
+<summary>
+
+Detailed results Richness & Environmental Parameter ANOVA tests
+
+</summary>
 
 ```{r, eval=TRUE, echo=TRUE}
 summary(lm(richness ~ temp, alpha))
@@ -469,9 +506,13 @@ summary(lm(richness ~ as.numeric(BGA_ugL), alpha2))
 
 </details>
 
-Salinity, oxygen and pH have the greatest effect on species richness. During the normoxic season, increasing chlorophyll and BGA levels correspond to decreasing richness. This is not true in the hypoxic season (no relationship).
+Salinity, oxygen and pH have the greatest effect on species richness.
+During the normoxic season, increasing chlorophyll and BGA levels
+correspond to decreasing richness. This is not true in the hypoxic
+season (no relationship).
 
-Here we can see these relationships by plotting species richness against pH, DO, saliniy, BGA, and chlorophyll.
+Here we can see these relationships by plotting species richness against
+pH, DO, saliniy, BGA, and chlorophyll.
 
 ```{r, echo=FALSE, layout="l-body-outset", fig.width=8, fig.height=4}
 DO.rich <- ggplot(alpha_s, aes(x = DO_mgL, y = richness, colour = site)) +
@@ -555,9 +596,13 @@ summary(lm(pielou ~ as.numeric(Chlorophyll_ugL), alpha2)) # marginally significa
 summary(lm(pielou ~ as.numeric(BGA_ugL), alpha2)) # negative, significant - low evenness with more BGA
 ```
 
+<details>
 
-<details markdown="1">
-<summary>Detailed results Evenness & Environmental Parameter ANOVA tests </summary>
+<summary>
+
+Detailed results Evenness & Environmental Parameter ANOVA tests
+
+</summary>
 
 ```{r, eval=TRUE, echo=TRUE}
 summary(lm(pielou ~ temp, alpha))
@@ -636,7 +681,9 @@ plot_grid(DO.even + theme(legend.position = 'none'),
 
 # Region Effects
 
-First, we look at the effect of region on diversity. The outer bay (OB) includes the two normoxic sites (Cristobal and P. Caracol) and the inner bay (IB) included the two hypoxic sites.
+First, we look at the effect of region on diversity. The outer bay (OB)
+includes the two normoxic sites (Cristobal and P. Caracol) and the inner
+bay (IB) included the two hypoxic sites.
 
 ```{r}
 anova <- aov(shannon ~ Region, alpha) # H'  significant ***
@@ -649,7 +696,8 @@ anova <- aov(pielou ~ Region, alpha) # Evenness significant  ***
 summary(anova)
 ```
 
-Boxplots showing the significant differences between different diversity metrics and region.
+Boxplots showing the significant differences between different diversity
+metrics and region.
 
 ```{r, echo=FALSE}
 H_region <- ggplot(alpha, aes(x = Region, y = shannon, fill = Region)) +
@@ -685,7 +733,11 @@ plot_grid(H_region + theme(legend.position = 'none'),
           rel_heights = c(1,1,1),  ncol = 3)
 ```
 
-These one-way ANOVA tests reveals a significant relationship between region (a categorical variable) and each diversity metric. Greater macrofaunal diversity and richiness was observed in the outer bay compared to the inner bay. The outer bay had less evenness than the inner bay.
+These one-way ANOVA tests reveals a significant relationship between
+region (a categorical variable) and each diversity metric. Greater
+macrofaunal diversity and richiness was observed in the outer bay
+compared to the inner bay. The outer bay had less evenness than the
+inner bay.
 
 # Seasonal Effects
 
@@ -720,9 +772,14 @@ ggplot(alpha, aes(x = site, y = shannon)) +
 
 ```
 
-The only site that in which the macrofaunal diversity is affected by seasonality is P. Caracol. Surprisingly, the diversity is higher during the hypoxic season compared to the normoxic season. 
+The only site that in which the macrofaunal diversity is affected by
+seasonality is P. Caracol. Surprisingly, the diversity is higher during
+the hypoxic season compared to the normoxic season.
 
-We can see this using the package *ggpubr* and comparing the means of variable 'shannon' (i.e. Shannon's H' diversity) in the different site groups formed by the grouping variable 'season.' P-values/significance tests are based on the non-parametric wilcoxon test.
+We can see this using the package *ggpubr* and comparing the means of
+variable 'shannon' (i.e. Shannon's H' diversity) in the different site
+groups formed by the grouping variable 'season.' P-values/significance
+tests are based on the non-parametric wilcoxon test.
 
 ```{r, echo=FALSE}
 ggplot(alpha, aes(x = site, y = richness)) +
@@ -735,7 +792,9 @@ ggplot(alpha, aes(x = site, y = richness)) +
   stat_compare_means(label = "p.signif", aes(group = season))
 ```
 
-During the normoxic season the macrofaunal community at Pastores has higher species richness, compared to the hypoxic season. Only at Pastores is species richness significantly influenced by season.
+During the normoxic season the macrofaunal community at Pastores has
+higher species richness, compared to the hypoxic season. Only at
+Pastores is species richness significantly influenced by season.
 
 ```{r, echo=FALSE}
 ggplot(alpha, aes(x = site, y = pielou)) +
@@ -749,7 +808,11 @@ ggplot(alpha, aes(x = site, y = pielou)) +
   stat_compare_means(label = "p.signif", aes(group = season))
 ```
 
-Yes. Diversity appears to significantly change due to season in some sites, as seen with a significant siteX season interaction (H' and richness). All the samples without any occurances were considered leaving many 'zeros' and not fitting into the assumptions of ANOVA very well.
+Yes. Diversity appears to significantly change due to season in some
+sites, as seen with a significant siteX season interaction (H' and
+richness). All the samples without any occurances were considered
+leaving many 'zeros' and not fitting into the assumptions of ANOVA very
+well.
 
 # Temporal Effects
 
@@ -758,7 +821,8 @@ anova_time_even <- aov(pielou ~ date * site * season, alpha)
 summary(anova_time_even)
 ```
 
-There is a significant effect of site and the interaction between date and site on Pielou's Evenness.
+There is a significant effect of site and the interaction between date
+and site on Pielou's Evenness.
 
 ```{r, echo=FALSE}
 p_even_time <- ggplot(alpha, aes(x = date, y = pielou, group = site, color =site)) +
@@ -775,16 +839,22 @@ p_even_time
 #p_even_time + facet_wrap(~site)
 ```
 
-From the graph here we see that Almirante is the most variable, with evenness decreases later in the year. 
- 
+From the graph here we see that Almirante is the most variable, with
+evenness decreases later in the year.
+
 And Shannon's H' Diversity?
- 
+
 ```{r, eval=TRUE}
 anova_date_H <- aov(shannon ~ date * site * season, alpha)
 summary(anova_date_H)
 ```
 
-Date, site  and their interaction is significant. P. Caracol and Cristobal are not effected by the temporal changes. The inner bay sites, Almirante and Pastores, however, experience decline in species' diversity during the hypoxic season, as well as periodically (Feb. 2018). Note, oxygen conditions were uncharacteristically low in Feb. 2018 explaining this decline in diversity during this period. 
+Date, site and their interaction is significant. P. Caracol and
+Cristobal are not effected by the temporal changes. The inner bay sites,
+Almirante and Pastores, however, experience decline in species'
+diversity during the hypoxic season, as well as periodically (Feb.
+2018). Note, oxygen conditions were uncharacteristically low in Feb.
+2018 explaining this decline in diversity during this period.
 
 ```{r, echo=FALSE}
 p_H_time <- ggplot(alpha, aes(x = date, y = shannon, group = site, color =site)) +
@@ -802,16 +872,21 @@ p_H_time
 ```
 
 What about Richness?
- 
+
 ```{r, eval=TRUE}
 anova_date_rich <- aov(richness ~ date * site * season, alpha)
 summary(anova_date_rich)
 ```
 
-Date and site are significant. No interactions. In terms of species richness, this plot shows that there is a general pattern with the highest richness in the most northern, outer bay site (P. Caracol), followed by Cristobal. Almirante and Pastores, the two inner bay sites are similar through the year. 
+Date and site are significant. No interactions. In terms of species
+richness, this plot shows that there is a general pattern with the
+highest richness in the most northern, outer bay site (P. Caracol),
+followed by Cristobal. Almirante and Pastores, the two inner bay sites
+are similar through the year.
 
-All sites experience a reduction in species richness between Sept-Nov. 2017 (corresponding the the hypoxic event in the bay), as will as in February, July, November 2018. 
-
+All sites experience a reduction in species richness between Sept-Nov.
+2017 (corresponding the the hypoxic event in the bay), as will as in
+February, July, November 2018.
 
 ```{r, echo=FALSE}
 p_rich_time <- ggplot(alpha, aes(x = date, y = richness, group = site, color =site)) +
@@ -834,4 +909,6 @@ remove(list = ls())
 
 ## Source Code {.appendix}
 
-The source code for this page can be accessed on GitHub by [clicking this link](https://github.com/tropical-repo/web/blob/master/trepo-macroalpha.Rmd).
+The source code for this page can be accessed on GitHub by [clicking
+this
+link](https://github.com/tropical-repo/web/blob/master/trepo-macroalpha.Rmd).
